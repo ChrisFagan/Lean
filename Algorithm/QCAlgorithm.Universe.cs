@@ -20,6 +20,7 @@ using QuantConnect.Data;
 using QuantConnect.Data.Fundamental;
 using QuantConnect.Data.UniverseSelection;
 using QuantConnect.Securities;
+using QuantConnect.Util;
 
 namespace QuantConnect.Algorithm
 {
@@ -261,17 +262,9 @@ namespace QuantConnect.Algorithm
         /// <param name="fineSelector">Defines a more detailed selection with access to more data</param>
         public void AddUniverse(Func<IEnumerable<CoarseFundamental>, IEnumerable<Symbol>> coarseSelector, Func<IEnumerable<FineFundamental>, IEnumerable<Symbol>> fineSelector)
         {
-            // create a new universe for coarse fundamental data
             var coarse = new CoarseFundamentalUniverse(UniverseSettings, SecurityInitializer, coarseSelector);
 
-            // create a new universe for fine fundamental data
-            var fine = new FineFundamentalUniverse(UniverseSettings, SecurityInitializer, fineSelector);
-
-            // wire them up such that the results from coarse will be piped into fine
-            var chained = coarse.ChainedTo(fine, configurationPerSymbol: true);
-
-            // finally add the chained universe
-            AddUniverse(chained);
+            AddUniverse(new FineFundamentalFilteredUniverse(coarse, fineSelector));
         }
 
         /// <summary>
@@ -282,14 +275,7 @@ namespace QuantConnect.Algorithm
         /// <param name="fineSelector">Defines a more detailed selection with access to more data</param>
         public void AddUniverse(Universe universe, Func<IEnumerable<FineFundamental>, IEnumerable<Symbol>> fineSelector)
         {
-            // create a new universe for fine fundamental data
-            var fine = new FineFundamentalUniverse(UniverseSettings, SecurityInitializer, fineSelector);
-
-            // wire them up such that the results from universe will be piped into fine
-            var chained = universe.ChainedTo(fine, configurationPerSymbol: true);
-
-            // finally add the chained universe
-            AddUniverse(chained);
+            AddUniverse(new FineFundamentalFilteredUniverse(universe, fineSelector));
         }
 
         /// <summary>
@@ -339,6 +325,22 @@ namespace QuantConnect.Algorithm
         /// </summary>
         private void AddToUserDefinedUniverse(Security security)
         {
+            // if we are adding a non-internal security which is also the benchmark, we remove it first
+            Security existingSecurity;
+            if (Securities.TryGetValue(security.Symbol, out existingSecurity))
+            {
+                if (!security.IsInternalFeed() && existingSecurity.Symbol == _benchmarkSymbol)
+                {
+                    var securityUniverse = UniverseManager.Values.OfType<UserDefinedUniverse>().FirstOrDefault(x => x.Members.ContainsKey(security.Symbol));
+                    if (securityUniverse != null)
+                    {
+                        securityUniverse.Remove(security.Symbol);
+                    }
+
+                    Securities.Remove(security.Symbol);
+                }
+            }
+
             Securities.Add(security);
 
             // add this security to the user defined universe

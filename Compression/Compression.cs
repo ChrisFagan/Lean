@@ -30,8 +30,11 @@ using ZipEntry = ICSharpCode.SharpZipLib.Zip.ZipEntry;
 using ZipFile = Ionic.Zip.ZipFile;
 using ZipInputStream = ICSharpCode.SharpZipLib.Zip.ZipInputStream;
 using ZipOutputStream = ICSharpCode.SharpZipLib.Zip.ZipOutputStream;
+using System.Collections.Concurrent;
+using System.Threading.Tasks;
+using System.Runtime.CompilerServices;
 
-namespace QuantConnect 
+namespace QuantConnect
 {
     /// <summary>
     /// Compression class manages the opening and extraction of compressed files (zip, tar, tar.gz).
@@ -246,15 +249,16 @@ namespace QuantConnect
         /// <returns>The zipped file as a byte array</returns>
         public static byte[] ZipBytes(byte[] bytes, string zipEntryName)
         {
-            using (var memoryStream = new MemoryStream())
-            using (var stream = new ZipOutputStream(memoryStream))
+            var memoryStream = new MemoryStream();
+            using (var archive = new ZipArchive(memoryStream, ZipArchiveMode.Create, true))
             {
-                var entry = new ZipEntry(zipEntryName);
-                stream.PutNextEntry(entry);
-                var buffer = new byte[16*1024];
-                StreamUtils.Copy(new MemoryStream(bytes), stream, buffer);
-                return memoryStream.GetBuffer();
+                var entry = archive.CreateEntry(zipEntryName);
+                using (var entryStream = entry.Open())
+                {
+                    entryStream.Write(bytes, 0, bytes.Length);
+                }
             }
+            return memoryStream.GetBuffer();
         }
 
         /// <summary>
@@ -285,21 +289,30 @@ namespace QuantConnect
         /// <returns>String path for the new zip file</returns>
         public static string Zip(string textPath, string zipEntryName, bool deleteOriginal = true)
         {
-            var zipPath = "";
+            var zipPath = textPath.Replace(".csv", ".zip").Replace(".txt", ".zip");
+            Zip(textPath, zipPath, zipEntryName, deleteOriginal);
+            return zipPath;
+        }
 
+        /// <summary>
+        /// Compresses the specified source file.
+        /// </summary>
+        /// <param name="source">The source file to be compressed</param>
+        /// <param name="destination">The destination zip file path</param>
+        /// <param name="zipEntryName">The zip entry name for the file</param>
+        /// <param name="deleteOriginal">True to delete the source file upon completion</param>
+        public static void Zip(string source, string destination, string zipEntryName, bool deleteOriginal)
+        {
             try
             {
                 var buffer = new byte[4096];
-                zipPath = textPath.Replace(".csv", ".zip");
-                zipPath = zipPath.Replace(".txt", ".zip");
-                //Open the zip:
-                using (var stream = new ZipOutputStream(File.Create(zipPath)))
+                using (var stream = new ZipOutputStream(File.Create(destination)))
                 {
                     //Zip the text file.
                     var entry = new ZipEntry(zipEntryName);
                     stream.PutNextEntry(entry);
 
-                    using (var fs = File.OpenRead(textPath))
+                    using (var fs = File.OpenRead(source))
                     {
                         int sourceBytes;
                         do
@@ -309,18 +322,18 @@ namespace QuantConnect
                         }
                         while (sourceBytes > 0);
                     }
-                    //Close stream:
-                    stream.Finish();
-                    stream.Close();
                 }
+
                 //Delete the old text file:
-                if (deleteOriginal) File.Delete(textPath);
+                if (deleteOriginal)
+                {
+                    File.Delete(source);
+                }
             }
             catch (Exception err)
             {
                 Log.Error(err);
             }
-            return zipPath;
         }
 
         /// <summary>
@@ -489,7 +502,7 @@ namespace QuantConnect
                         var entry = zip.FirstOrDefault(x => zipEntryName == null || string.Compare(x.FileName, zipEntryName, StringComparison.OrdinalIgnoreCase) == 0);
                         if (entry == null)
                         {
-                            Log.Error("Compression.Unzip(): Unable to locate zip entry with name: " + zipEntryName + " in file: " + filename);
+                            // Unable to locate zip entry 
                             return null;
                         }
 
@@ -513,6 +526,8 @@ namespace QuantConnect
             }
             return reader;
         }
+
+
 
         /// <summary>
         /// Streams the unzipped file as key value pairs of file name to file contents.
