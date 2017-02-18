@@ -71,15 +71,22 @@ namespace QuantConnect.Lean.Engine.DataFeeds
 
                 // prepare a BaseDataCollection of FineFundamental instances
                 var fineCollection = new BaseDataCollection();
-                var dataFileProvider = new DefaultDataFileProvider();
+                var dataProvider = new DefaultDataProvider();
 
                 foreach (var symbol in selectSymbolsResult)
                 {
                     var factory = new FineFundamentalSubscriptionEnumeratorFactory(_algorithm.LiveMode, x => new[] { dateTimeUtc });
                     var config = FineFundamentalUniverse.CreateConfiguration(symbol);
-                    var security = universe.CreateSecurity(symbol, _algorithm, _marketHoursDatabase, _symbolPropertiesDatabase);
+
+                    Security security;
+                    if (!_algorithm.Securities.TryGetValue(symbol, out security))
+                    {
+                        security = universe.CreateSecurity(symbol, _algorithm, _marketHoursDatabase, _symbolPropertiesDatabase);
+                        _algorithm.Securities.Add(security);
+                    }
+
                     var request = new SubscriptionRequest(true, universe, security, config, dateTimeUtc, dateTimeUtc);
-                    var enumerator = factory.CreateEnumerator(request, dataFileProvider);
+                    var enumerator = factory.CreateEnumerator(request, dataProvider);
                     if (enumerator.MoveNext())
                     {
                         fineCollection.Data.Add(enumerator.Current);

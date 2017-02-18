@@ -445,29 +445,38 @@ namespace QuantConnect.Lean.Engine.Results
         {
             // break the charts into groups
 
-            const int groupSize = 10;
-            Dictionary<string, Chart> current = new Dictionary<string, Chart>();
+            var groupSize = 3;
+            var current = new Dictionary<string, Chart>();
             var chartPackets = new List<LiveResultPacket>();
 
-            // we only want to send data for the chart the user is subscribed to, but
-            // we still want to let consumers know that these other charts still exists
-            foreach (var chart in deltaCharts.Values)
+            // First add send charts
+
+            // Loop through all the charts, add them to packets to be sent. 
+            // Group three charts to a packets, and add in the data to the chart depending on the subscription.
+            
+            foreach (var deltaChart in deltaCharts.Values)
             {
-                if (chart.Name != _subscription)
+                var chart = new Chart(deltaChart.Name);
+                current.Add(deltaChart.Name, chart);
+
+                if (deltaChart.Name == _subscription || _subscription == "*")
                 {
-                    current.Add(chart.Name, new Chart(chart.Name));
+                    chart.Series = deltaChart.Series;
+                }
+
+                if (current.Count >= groupSize)
+                {
+                    // Add the micro packet to transport.
+                    chartPackets.Add(new LiveResultPacket(_job, new LiveResult { Charts = current }));
+                    // Reset the carrier variable.
+                    current = new Dictionary<string, Chart>();
                 }
             }
 
-            chartPackets.Add(new LiveResultPacket(_job, new LiveResult { Charts = current }));
-
-            // add in our subscription symbol
-            Chart subscriptionChart;
-            if (_subscription != null && deltaCharts.TryGetValue(_subscription, out subscriptionChart))
+            //Add whatever is left over here too.
+            if (current.Count > 0)
             {
-                var scharts = new Dictionary<string,Chart>();
-                scharts.Add(_subscription, subscriptionChart);
-                chartPackets.Add(new LiveResultPacket(_job, new LiveResult { Charts = scharts }));
+                chartPackets.Add(new LiveResultPacket(_job, new LiveResult { Charts = current }));
             }
 
             // these are easier to split up, not as big as the chart objects
@@ -564,8 +573,8 @@ namespace QuantConnect.Lean.Engine.Results
         /// Add a sample to the chart specified by the chartName, and seriesName.
         /// </summary>
         /// <param name="chartName">String chart name to place the sample.</param>
-        /// <param name="chartType">Type of chart we should create if it doesn't already exist.</param>
         /// <param name="seriesName">Series name for the chart.</param>
+        /// <param name="seriesIndex">Series chart index - which chart should this series belong</param>
         /// <param name="seriesType">Series type for the chart.</param>
         /// <param name="time">Time for the sample</param>
         /// <param name="value">Value for the chart sample.</param>
@@ -999,7 +1008,7 @@ namespace QuantConnect.Lean.Engine.Results
         /// <remarks>Prime candidate for putting into a base class. Is identical across all result handlers.</remarks>
         public void ProcessSynchronousEvents(bool forceProcess = false)
         {
-            var time = DateTime.Now;
+            var time = DateTime.UtcNow;
 
             if (time > _nextSample || forceProcess)
             {
@@ -1045,7 +1054,7 @@ namespace QuantConnect.Lean.Engine.Results
                             else
                             {
                                 // we haven't gotten data yet so just spoof a tick to push through the system to start with
-                                security.SetMarketPrice(new Tick(DateTime.Now, subscription.Configuration.Symbol, price, price));
+                                security.SetMarketPrice(new Tick(time, subscription.Configuration.Symbol, price, price));
                             }
 
                             //Sample Asset Pricing:
