@@ -24,6 +24,7 @@ using QuantConnect.Brokerages;
 using QuantConnect.Configuration;
 using QuantConnect.Interfaces;
 using QuantConnect.Lean.Engine.DataFeeds;
+using QuantConnect.Lean.Engine.HistoricalData;
 using QuantConnect.Logging;
 using QuantConnect.Orders;
 using QuantConnect.Packets;
@@ -125,6 +126,11 @@ namespace QuantConnect.Lean.Engine
 
                     // set the history provider before setting up the algorithm
                     var historyProvider = GetHistoryProvider(job.HistoryProvider);
+                    if (historyProvider is BrokerageHistoryProvider)
+                    {
+                        (historyProvider as BrokerageHistoryProvider).SetBrokerage(brokerage);
+                    }
+
                     var historyDataCacheProvider = new SingleEntryDataCacheProvider(_algorithmHandlers.DataProvider);
                     historyProvider.Initialize(job, _algorithmHandlers.DataProvider, historyDataCacheProvider, _algorithmHandlers.MapFileProvider, _algorithmHandlers.FactorFileProvider, progress =>
                     {
@@ -176,7 +182,10 @@ namespace QuantConnect.Lean.Engine
                 Log.Trace("         Results:      " + _algorithmHandlers.Results.GetType().FullName);
                 Log.Trace("         Transactions: " + _algorithmHandlers.Transactions.GetType().FullName);
                 Log.Trace("         Commands:     " + _algorithmHandlers.CommandQueue.GetType().FullName);
-                Log.Trace("         History Provider:     " + algorithm.HistoryProvider.GetType().FullName);
+                if (algorithm != null && algorithm.HistoryProvider != null)
+                {
+                    Log.Trace("         History Provider:     " + algorithm.HistoryProvider.GetType().FullName);
+                }
                 if (job is LiveNodePacket) Log.Trace("         Brokerage:      " + brokerage.GetType().FullName);
 
                 //-> Using the job + initialization: load the designated handlers:

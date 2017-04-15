@@ -18,6 +18,7 @@ using NUnit.Framework;
 using QuantConnect.Brokerages.Oanda;
 using QuantConnect.Configuration;
 using QuantConnect.Data;
+using QuantConnect.Lean.Engine.HistoricalData;
 using QuantConnect.Logging;
 using Environment = QuantConnect.Brokerages.Oanda.Environment;
 
@@ -30,25 +31,27 @@ namespace QuantConnect.Tests.Brokerages.Oanda
         {
             get
             {
+                var eurusd = Symbol.Create("EURUSD", SecurityType.Forex, Market.Oanda);
+
                 return new[]
                 {
                     // valid parameters
-                    new TestCaseData(Symbols.EURUSD, Resolution.Second, Time.OneMinute, false),
-                    new TestCaseData(Symbols.EURUSD, Resolution.Minute, Time.OneHour, false),
-                    new TestCaseData(Symbols.EURUSD, Resolution.Hour, Time.OneDay, false),
-                    new TestCaseData(Symbols.EURUSD, Resolution.Daily, TimeSpan.FromDays(15), false),
+                    new TestCaseData(eurusd, Resolution.Second, Time.OneMinute, false),
+                    new TestCaseData(eurusd, Resolution.Minute, Time.OneHour, false),
+                    new TestCaseData(eurusd, Resolution.Hour, Time.OneDay, false),
+                    new TestCaseData(eurusd, Resolution.Daily, TimeSpan.FromDays(15), false),
 
                     // invalid resolution, throws "System.ArgumentException : Unsupported resolution: Tick"
-                    new TestCaseData(Symbols.EURUSD, Resolution.Tick, TimeSpan.FromSeconds(15), true),
+                    new TestCaseData(eurusd, Resolution.Tick, TimeSpan.FromSeconds(15), true),
 
                     // invalid period, no error, empty result
-                    new TestCaseData(Symbols.EURUSD, Resolution.Daily, TimeSpan.FromDays(-15), false),
+                    new TestCaseData(eurusd, Resolution.Daily, TimeSpan.FromDays(-15), false),
 
-                    // invalid symbol, throws "System.ArgumentException : Unknown symbol: XYZ"
-                    new TestCaseData(Symbol.Create("XYZ", SecurityType.Forex, Market.FXCM), Resolution.Daily, TimeSpan.FromDays(15), true),
+                    // invalid symbol, no error, empty result
+                    new TestCaseData(Symbol.Create("XYZ", SecurityType.Forex, Market.FXCM), Resolution.Daily, TimeSpan.FromDays(15), false),
 
-                    // invalid security type, throws "System.ArgumentException : Invalid security type: Equity"
-                    new TestCaseData(Symbols.AAPL, Resolution.Daily, TimeSpan.FromDays(15), true),
+                    // invalid security type, no error, empty result
+                    new TestCaseData(Symbols.AAPL, Resolution.Daily, TimeSpan.FromDays(15), false),
                 };
             }
         }
@@ -63,7 +66,11 @@ namespace QuantConnect.Tests.Brokerages.Oanda
                 var accountId = Config.Get("oanda-account-id");
 
                 var brokerage = new OandaBrokerage(null, null, environment, accessToken, accountId);
-        
+
+                var historyProvider = new BrokerageHistoryProvider();
+                historyProvider.SetBrokerage(brokerage);
+                historyProvider.Initialize(null, null, null, null, null, null);
+
                 var now = DateTime.UtcNow;
 
                 var requests = new[]
@@ -77,7 +84,7 @@ namespace QuantConnect.Tests.Brokerages.Oanda
                     }
                 };
 
-                var history = brokerage.GetHistory(requests, TimeZones.Utc);
+                var history = historyProvider.GetHistory(requests, TimeZones.Utc);
 
                 foreach (var slice in history)
                 {
@@ -90,13 +97,13 @@ namespace QuantConnect.Tests.Brokerages.Oanda
                     }
                     else
                     {
-                        var bar = slice.Bars[symbol];
+                        var bar = slice.QuoteBars[symbol];
 
                         Log.Trace("{0}: {1} - O={2}, H={3}, L={4}, C={5}", bar.Time, bar.Symbol, bar.Open, bar.High, bar.Low, bar.Close);
                     }
                 }
 
-                Log.Trace("Data points retrieved: " + brokerage.DataPointCount);
+                Log.Trace("Data points retrieved: " + historyProvider.DataPointCount);
             };
 
             if (throwsException)

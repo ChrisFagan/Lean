@@ -238,7 +238,7 @@ namespace QuantConnect.Algorithm
         /// <summary>
         /// Gets the Trade Builder to generate trades from executions
         /// </summary>
-        public TradeBuilder TradeBuilder
+        public ITradeBuilder TradeBuilder
         {
             get;
             private set;
@@ -559,9 +559,18 @@ namespace QuantConnect.Algorithm
         /// Sets the security initializer function, used to initialize/configure securities after creation
         /// </summary>
         /// <param name="securityInitializer">The security initializer function</param>
-        public void SetSecurityInitializer(Action<Security> securityInitializer)
+        public void SetSecurityInitializer(Action<Security, bool> securityInitializer)
         {
             SetSecurityInitializer(new FuncSecurityInitializer(securityInitializer));
+        }
+
+        /// <summary>
+        /// Sets the security initializer function, used to initialize/configure securities after creation
+        /// </summary>
+        /// <param name="securityInitializer">The security initializer function</param>
+        public void SetSecurityInitializer(Action<Security> securityInitializer)
+        {
+            SetSecurityInitializer(new FuncSecurityInitializer((security, seedSecurity) => securityInitializer(security)));
         }
 
         /// <summary>
@@ -864,6 +873,13 @@ namespace QuantConnect.Algorithm
             {
                 // purposefully use the direct setter vs Set method so we don't flip the switch :/
                 SecurityInitializer = new BrokerageModelSecurityInitializer(model, new FuncSecuritySeeder(GetLastKnownPrice));
+
+                // update models on securities added earlier (before SetBrokerageModel is called)
+                foreach (var security in Securities.Values)
+                {
+                    // no need to seed the security, has already been done in AddSecurity
+                    SecurityInitializer.Initialize(security, false);
+                }
             }
         }
 
@@ -1187,6 +1203,15 @@ namespace QuantConnect.Algorithm
                     _endDate = QuantConnect.Time.EndOfTime;
                 }
             }
+        }
+
+        /// <summary>
+        /// Set the <see cref="ITradeBuilder"/> implementation to generate trades from executions and market price updates
+        /// </summary>
+        public void SetTradeBuilder(ITradeBuilder tradeBuilder)
+        {
+            TradeBuilder = tradeBuilder;
+            TradeBuilder.SetLiveMode(LiveMode);
         }
 
         /// <summary>

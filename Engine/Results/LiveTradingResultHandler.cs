@@ -510,6 +510,17 @@ namespace QuantConnect.Lean.Engine.Results
         }
 
         /// <summary>
+        /// Send a live trading system debug message to the live console.
+        /// </summary>
+        /// <param name="message">Message we'd like shown in console.</param>
+        public void SystemDebugMessage(string message)
+        {
+            Messages.Enqueue(new SystemDebugPacket(_job.ProjectId, _deployId, _compileId, message));
+            AddToLogStore(message);
+        }
+
+
+        /// <summary>
         /// Log string messages and send them to the console.
         /// </summary>
         /// <param name="message">String message wed like logged.</param>
@@ -728,7 +739,7 @@ namespace QuantConnect.Lean.Engine.Results
         /// <param name="message">Optional string message describing reason for status change.</param>
         public void SendStatusUpdate(AlgorithmStatus status, string message = "")
         {
-            var msg = status + (string.IsNullOrEmpty(message) ? string.Empty : message);
+            var msg = status + (string.IsNullOrEmpty(message) ? string.Empty : " " + message);
             Log.Trace("LiveTradingResultHandler.SendStatusUpdate(): " + msg);
             var packet = new AlgorithmStatusPacket(_job.AlgorithmId, _job.ProjectId, status, message);
             Messages.Enqueue(packet);
@@ -935,11 +946,20 @@ namespace QuantConnect.Lean.Engine.Results
         }
 
         /// <summary>
-        /// Terminate the result thread and apply any required exit proceedures.
+        /// Terminate the result thread and apply any required exit procedures.
         /// </summary>
         public void Exit()
         {
+            // If the algorithm was not successfully initialized, be sure to store the logs
+            // Update() will be unable to store the logs if the algorithm never full initialized
+            if (!_exitTriggered && _algorithm != null && !_algorithm.GetLocked())
+            {
+                ProcessSynchronousEvents(true);
+                StoreLog(_logStore);
+            }
+
             _exitTriggered = true;
+
             Update();
         }
 

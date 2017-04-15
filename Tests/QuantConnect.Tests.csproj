@@ -61,9 +61,8 @@
       <HintPath>..\packages\NetMQ.3.3.3.4\lib\net40\NetMQ.dll</HintPath>
       <Private>True</Private>
     </Reference>
-    <Reference Include="Newtonsoft.Json, Version=7.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
-      <HintPath>..\packages\Newtonsoft.Json.7.0.1\lib\net45\Newtonsoft.Json.dll</HintPath>
+    <Reference Include="Newtonsoft.Json, Version=9.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
+      <HintPath>..\packages\Newtonsoft.Json.9.0.1\lib\net45\Newtonsoft.Json.dll</HintPath>
     </Reference>
     <Reference Include="NodaTime">
       <HintPath>..\packages\NodaTime.1.3.1\lib\net35-Client\NodaTime.dll</HintPath>
@@ -101,6 +100,7 @@
     </Compile>
     <Compile Include="AlgorithmRunner.cs" />
     <Compile Include="Algorithm\AlgorithmAddDataTests.cs" />
+    <Compile Include="Algorithm\AlgorithmResolveConsolidatorTests.cs" />
     <Compile Include="Algorithm\AlgorithmSetBrokerageTests.cs" />
     <Compile Include="Algorithm\AlgorithmSetHoldingsTests.cs" />
     <Compile Include="Algorithm\AlgorithmTradingTests.cs" />
@@ -112,6 +112,7 @@
     <Compile Include="Brokerages\Fxcm\FxcmLimitOrderTestParameters.cs" />
     <Compile Include="Brokerages\Fxcm\FxcmStopMarketOrderTestParameters.cs" />
     <Compile Include="Brokerages\Fxcm\FxcmSymbolMapperTests.cs" />
+    <Compile Include="Brokerages\InteractiveBrokers\InteractiveBrokersBrokerageAdditionalTests.cs" />
     <Compile Include="Brokerages\Oanda\OandaBrokerageHistoryProviderTests.cs" />
     <Compile Include="Brokerages\SecurityProvider.cs" />
     <Compile Include="Brokerages\InteractiveBrokers\InteractiveBrokersBrokerageDataQueueHandlerTest.cs" />
@@ -131,6 +132,7 @@
     <Compile Include="Brokerages\Tradier\TradierBrokerageTests.cs" />
     <Compile Include="Common\CurrenciesTests.cs" />
     <Compile Include="Common\Data\Market\QuoteBarTests.cs" />
+    <Compile Include="Common\Orders\Slippage\SlippageModelsTests.cs" />
     <Compile Include="Common\Securities\BrokerageModelSecurityInitializerTests.cs" />
     <Compile Include="Common\Securities\FutureFilterTests.cs" />
     <Compile Include="Common\Securities\StandardDeviationOfReturnsVolatilityModelTests.cs" />
@@ -226,6 +228,7 @@
     <Compile Include="Engine\DataFeeds\Enumerators\TradeBarBuilderEnumeratorTests.cs" />
     <Compile Include="Engine\DataFeeds\FileSystemDataFeedTests.cs" />
     <Compile Include="Engine\DataFeeds\FillForwardEnumeratorTest.cs" />
+    <Compile Include="Engine\DataFeeds\IEXDataQueueHandlerTests.cs" />
     <Compile Include="Engine\DataFeeds\IQFeedRealtimeDataFeedTests.cs" />
     <Compile Include="Engine\DataFeeds\RemoteFileBaseData.cs" />
     <Compile Include="Engine\DataFeeds\RestApiBaseData.cs" />
@@ -236,6 +239,7 @@
     <Compile Include="Engine\DataProviders\DefaultDataProviderTests.cs" />
     <Compile Include="Engine\DefaultBrokerageMessageHandler.cs" />
     <Compile Include="Engine\FactorFileTests.cs" />
+    <Compile Include="Engine\RealTimePriceUpdateTests.cs" />
     <Compile Include="Engine\RealTime\ScheduledEventTests.cs" />
     <Compile Include="Engine\TestResultHandler.cs" />
     <Compile Include="Indicators\AbsolutePriceOscillatorTests.cs" />
@@ -286,6 +290,7 @@
     <Compile Include="Symbols.cs" />
     <Compile Include="TestExtensions.cs" />
     <Compile Include="Indicators\LinearWeightedMovingAverageTests.cs" />
+    <Compile Include="ToolBox\LeanDataWriterTests.cs" />
     <None Include="app.config" />
     <None Include="RegressionAlgorithms\Test_Cash.cs" />
     <None Include="RegressionAlgorithms\Test_LiveAlgorithm.cs" />
@@ -358,6 +363,12 @@
     <Content Include="TestData\frama.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <None Include="TestData\equity\usa\factor_files\aapl.csv">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="TestData\equity\usa\factor_files\gbsn.csv">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="TestData\multizip.zip">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
