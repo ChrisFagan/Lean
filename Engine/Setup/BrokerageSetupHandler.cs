@@ -19,6 +19,7 @@ using System.Linq;
 using Newtonsoft.Json;
 using QuantConnect.AlgorithmFactory;
 using QuantConnect.Brokerages;
+using QuantConnect.Brokerages.InteractiveBrokers;
 using QuantConnect.Configuration;
 using QuantConnect.Data.Market;
 using QuantConnect.Interfaces;
@@ -197,6 +198,14 @@ namespace QuantConnect.Lean.Engine.Setup
                         algorithm.SetDateTime(DateTime.UtcNow);
                         //Set the source impl for the event scheduling
                         algorithm.Schedule.SetEventSchedule(realTimeHandler);
+
+                        // If we're using IB, set the default subscription limit to 100,
+                        // algorithms can override this setting in the Initialize method
+                        if (brokerage is InteractiveBrokersBrokerage)
+                        {
+                            algorithm.Settings.DataSubscriptionLimit = 100;
+                        }
+
                         //Initialise the algorithm, get the required data:
                         algorithm.Initialize();
                         if (liveJob.Brokerage != "PaperBrokerage")
@@ -224,8 +233,6 @@ namespace QuantConnect.Lean.Engine.Setup
                 resultHandler.SendStatusUpdate(AlgorithmStatus.LoggingIn, "Logging into brokerage...");
 
                 brokerage.Message += brokerageOnMessage;
-
-                algorithm.Transactions.SetOrderProcessor(transactionHandler);
 
                 Log.Trace("BrokerageSetupHandler.Setup(): Connecting to brokerage...");
                 try
@@ -310,36 +317,17 @@ namespace QuantConnect.Lean.Engine.Setup
 
                         if (!algorithm.Portfolio.ContainsKey(holding.Symbol))
                         {
-                            Log.Trace("BrokerageSetupHandler.Setup(): Adding unrequested security: " + holding.Symbol.ToString());
+                            Log.Trace("BrokerageSetupHandler.Setup(): Adding unrequested security: " + holding.Symbol.Value);
 
-                            var marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
-                            var symbolPropertiesDatabase = SymbolPropertiesDatabase.FromDataFolder();
-
-                            // if we adding option, we have to add the option universe, so we take underlying symbol
-                            // Implemented solution is temporary. We will remove this code once it is the idea on how to refactor IAlgorithm is matured. 
                             if (holding.Type == SecurityType.Option)
                             {
-                                var underlying = holding.Symbol.Underlying.Value;
-
-                                // adding entire option universe to the system
-                                var canonicalOption = algorithm.AddSecurity(holding.Type, underlying, minResolution.Value, null, true, 1.0m, false);
-                                var universe = algorithm.UniverseManager.Where(x => x.Key == canonicalOption.Symbol).First().Value;
-
-                                // adding current option contract to the system
-                                var option = universe.CreateSecurity(holding.Symbol, algorithm, marketHoursDatabase, symbolPropertiesDatabase);
-                                algorithm.Securities.Add(holding.Symbol, option);
+                                // add current option contract to the system
+                                algorithm.AddOptionContract(holding.Symbol, minResolution.Value, true, 1.0m);
                             }
                             else if (holding.Type == SecurityType.Future)
                             {
-                                var underlying = holding.Symbol.Underlying.Value;
-
-                                // adding entire future universe to the system
-                                var canonicalFuture = algorithm.AddSecurity(holding.Type, underlying, minResolution.Value, null, true, 1.0m, false);
-                                var universe = algorithm.UniverseManager.Where(x => x.Key == canonicalFuture.Symbol).First().Value;
-
-                                // adding current future contract to the system
-                                var future = universe.CreateSecurity(holding.Symbol, algorithm, marketHoursDatabase, symbolPropertiesDatabase);
-                                algorithm.Securities.Add(holding.Symbol, future);
+                                // add current future contract to the system
+                                algorithm.AddFutureContract(holding.Symbol, minResolution.Value, true, 1.0m);
                             }
                             else
                             {

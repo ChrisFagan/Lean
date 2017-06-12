@@ -304,12 +304,15 @@ namespace QuantConnect.Data.Market
             }
             catch (Exception err)
             {
-                Log.Error("QuoteBar.Reader(): Error on line {0} for date {1}. Message: {2}", line, date, err);
+                Log.Error("QuoteBar.Reader(): Error parsing line: '{0}', Symbol: {1}, SecurityType: {2}, Resolution: {3}, Date: {4}, Message: {5}", 
+                    line, config.Symbol.Value, config.SecurityType, config.Resolution, date.ToString("yyyy-MM-dd"), err);
             }
 
             // if we couldn't parse it above return a default instance
             return new QuoteBar { Symbol = config.Symbol, Period = config.Increment };
         }
+
+        private static bool HasShownWarning;
 
         /// <summary>
         /// "Scaffold" code - If the data being read is formatted as a TradeBar, use this method to deserialize it
@@ -319,7 +322,6 @@ namespace QuantConnect.Data.Market
         /// <param name="line">Line from the data file requested</param>
         /// <param name="date">Date of this reader request</param>
         /// <returns><see cref="QuoteBar"/> with the bid/ask prices set to same values</returns>
-        private static bool HasShownWarning;
         [Obsolete("All Forex data should use Quotes instead of Trades.")]
         private QuoteBar ParseTradeAsQuoteBar(SubscriptionDataConfig config, DateTime date, string line)
         {
@@ -379,7 +381,7 @@ namespace QuantConnect.Data.Market
         /// <returns><see cref="QuoteBar"/> with the bid/ask set to same values</returns>
         public QuoteBar ParseFuture(SubscriptionDataConfig config, string line, DateTime date)
         {
-            return ParseQuote(config, date, line, true);
+            return ParseQuote(config, date, line, false);
         }
 
         /// <summary>
