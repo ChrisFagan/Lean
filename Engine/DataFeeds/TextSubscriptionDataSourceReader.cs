@@ -1,11 +1,11 @@
 /*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
- * 
- * Licensed under the Apache License, Version 2.0 (the "License"); 
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,7 +16,6 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.IO;
 using QuantConnect.Data;
 using QuantConnect.Interfaces;
 using QuantConnect.Lean.Engine.DataFeeds.Transport;
@@ -25,7 +24,7 @@ using QuantConnect.Util;
 namespace QuantConnect.Lean.Engine.DataFeeds
 {
     /// <summary>
-    /// Provides an implementations of <see cref="ISubscriptionDataSourceReader"/> that uses the 
+    /// Provides an implementations of <see cref="ISubscriptionDataSourceReader"/> that uses the
     /// <see cref="BaseData.Reader(QuantConnect.Data.SubscriptionDataConfig,string,System.DateTime,bool)"/>
     /// method to read lines of text from a <see cref="SubscriptionDataSource"/>
     /// </summary>
@@ -44,7 +43,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         public event EventHandler<InvalidSourceEventArgs> InvalidSource;
 
         /// <summary>
-        /// Event fired when an exception is thrown during a call to 
+        /// Event fired when an exception is thrown during a call to
         /// <see cref="BaseData.Reader(QuantConnect.Data.SubscriptionDataConfig,string,System.DateTime,bool)"/>
         /// </summary>
         public event EventHandler<ReaderErrorEventArgs> ReaderError;
@@ -103,7 +102,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                         OnReaderError(line, err);
                     }
 
-                    if (instance != null)
+                    if (instance != null && instance.EndTime != default(DateTime))
                     {
                         yield return instance;
                     }
@@ -130,7 +129,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                     break;
 
                 case SubscriptionTransportMedium.Rest:
-                    reader = new RestSubscriptionStreamReader(subscriptionDataSource.Source);
+                    reader = new RestSubscriptionStreamReader(subscriptionDataSource.Source, subscriptionDataSource.Headers, _isLiveMode);
                     break;
 
                 default:
@@ -186,17 +185,12 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// </summary>
         private IStreamReader HandleRemoteSourceFile(SubscriptionDataSource source)
         {
-            // clean old files out of the cache
-            if (!Directory.Exists(Globals.Cache)) Directory.CreateDirectory(Globals.Cache);
-            foreach (var file in Directory.EnumerateFiles(Globals.Cache))
-            {
-                if (File.GetCreationTime(file) < DateTime.Now.AddHours(-24)) File.Delete(file);
-            }
+            SubscriptionDataSourceReader.CheckRemoteFileCache();
 
             try
             {
                 // this will fire up a web client in order to download the 'source' file to the cache
-                return new RemoteFileSubscriptionStreamReader(_dataCacheProvider, source.Source, Globals.Cache);
+                return new RemoteFileSubscriptionStreamReader(_dataCacheProvider, source.Source, Globals.Cache, source.Headers);
             }
             catch (Exception err)
             {

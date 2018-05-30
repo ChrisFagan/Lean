@@ -1,10 +1,10 @@
 ﻿# QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
 # Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
-# 
-# Licensed under the Apache License, Version 2.0 (the "License"); 
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
-# 
+#
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -21,18 +21,24 @@ from QuantConnect import *
 from QuantConnect.Orders import OrderStatus
 from QuantConnect.Algorithm import QCAlgorithm
 
+### <summary>
+### This algorithm demonstrates the runtime addition and removal of securities from your algorithm.
+### With LEAN it is possible to add and remove securities after the initialization.
+### </summary>
+### <meta name="tag" content="using data" />
+### <meta name="tag" content="assets" />
+### <meta name="tag" content="regression test" />
 class AddRemoveSecurityRegressionAlgorithm(QCAlgorithm):
-    '''Basic template algorithm simply initializes the date range and cash'''
 
     def Initialize(self):
         '''Initialise the data and resolution required, as well as the cash and start-end dates for your algorithm. All algorithms must initialized.'''
-        
-        self.SetStartDate(2013,10,07)  #Set Start Date
+
+        self.SetStartDate(2013,10,7)   #Set Start Date
         self.SetEndDate(2013,10,11)    #Set End Date
         self.SetCash(100000)           #Set Strategy Cash
         # Find more symbols here: http://quantconnect.com/data
-        self.spy = self.AddEquity("SPY")
-        
+        self.AddEquity("SPY")
+
         self._lastAction = None
 
 
@@ -42,22 +48,22 @@ class AddRemoveSecurityRegressionAlgorithm(QCAlgorithm):
             return
 
         if not self.Portfolio.Invested:
-            self.SetHoldings(self.spy.Symbol, .5)
+            self.SetHoldings("SPY", .5)
             self._lastAction = self.Time
 
         if self.Time.weekday() == 1:
-            self.aig = self.AddEquity("AIG")
-            self.bac = self.AddEquity("BAC")
+            self.AddEquity("AIG")
+            self.AddEquity("BAC")
             self._lastAction = self.Time
 
         if self.Time.weekday() == 2:
-            self.SetHoldings(self.aig.Symbol, .25)
-            self.SetHoldings(self.bac.Symbol, .25)
+            self.SetHoldings("AIG", .25)
+            self.SetHoldings("BAC", .25)
             self._lastAction = self.Time
 
         if self.Time.weekday() == 3:
-            self.RemoveSecurity(self.aig.Symbol)
-            self.RemoveSecurity(self.bac.Symbol)
+            self.RemoveSecurity("AIG")
+            self.RemoveSecurity("BAC")
             self._lastAction = self.Time
 
     def OnOrderEvent(self, orderEvent):

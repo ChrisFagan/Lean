@@ -1,11 +1,11 @@
 ﻿/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
- * 
- * Licensed under the Apache License, Version 2.0 (the "License"); 
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -119,6 +119,12 @@ namespace QuantConnect.Data.UniverseSelection
         /// <returns>True if we can remove the security, false otherwise</returns>
         public virtual bool CanRemoveMember(DateTime utcTime, Security security)
         {
+            // can always remove delisted securities from the universe
+            if (security.IsDelisted)
+            {
+                return true;
+            }
+
             Member member;
             if (Securities.TryGetValue(security.Symbol, out member))
             {
@@ -193,7 +199,7 @@ namespace QuantConnect.Data.UniverseSelection
                     isUniverseSubscription: false,
                     universe: this,
                     security: security,
-                    configuration: config,
+                    configuration: new SubscriptionDataConfig(config),
                     startTimeUtc: currentTimeUtc,
                     endTimeUtc: maximumEndTimeUtc
                     )
@@ -219,10 +225,11 @@ namespace QuantConnect.Data.UniverseSelection
         /// false if the security was already in the universe</returns>
         internal virtual bool AddMember(DateTime utcTime, Security security)
         {
-            if (Securities.ContainsKey(security.Symbol))
+            if (security.IsDelisted)
             {
                 return false;
             }
+
             return Securities.TryAdd(security.Symbol, new Member(utcTime, security));
         }
 

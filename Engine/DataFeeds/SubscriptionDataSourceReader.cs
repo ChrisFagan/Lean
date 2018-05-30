@@ -1,11 +1,11 @@
 ﻿/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
- * 
- * Licensed under the Apache License, Version 2.0 (the "License"); 
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,6 +15,7 @@
 */
 
 using System;
+using System.IO;
 using QuantConnect.Data;
 using QuantConnect.Interfaces;
 
@@ -45,10 +46,25 @@ namespace QuantConnect.Lean.Engine.DataFeeds
                     return new CollectionSubscriptionDataSourceReader(dataCacheProvider, config, date, isLiveMode);
 
                 case FileFormat.ZipEntryName:
-                    return new ZipEntryNameSubscriptionDataSourceReader(dataCacheProvider, config, date, isLiveMode);
+                    return new ZipEntryNameSubscriptionDataSourceReader(config, date, isLiveMode);
 
                 default:
                     throw new NotImplementedException("SubscriptionFactory.ForSource(" + source + ") has not been implemented yet.");
+            }
+        }
+
+        /// <summary>
+        /// Creates cache directory if not existing and deletes old files from the cache
+        /// </summary>
+        public static void CheckRemoteFileCache()
+        {
+            // create cache directory if not existing
+            if (!Directory.Exists(Globals.Cache)) Directory.CreateDirectory(Globals.Cache);
+
+            // clean old files out of the cache
+            foreach (var file in Directory.EnumerateFiles(Globals.Cache))
+            {
+                if (File.GetCreationTime(file) < DateTime.Now.AddHours(-24)) File.Delete(file);
             }
         }
     }

@@ -1,11 +1,11 @@
 ﻿/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
- * 
- * Licensed under the Apache License, Version 2.0 (the "License"); 
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -19,18 +19,20 @@ using System.Linq;
 using QuantConnect.Data;
 using QuantConnect.Data.Market;
 using QuantConnect.Orders;
-using QuantConnect.Securities;
 
 namespace QuantConnect.Algorithm.CSharp
 {
     /// <summary>
     /// This example demonstrates how to add options for a given underlying equity security.
-    /// It also shows how you can prefilter contracts easily based on strikes and expirations.
-    /// It also shows how you can inspect the option chain to pick a specific option contract to trade.
+    /// It also shows how you can prefilter contracts easily based on strikes and expirations, and how you
+    /// can inspect the option chain to pick a specific option contract to trade.
     /// </summary>
+    /// <meta name="tag" content="using data" />
+    /// <meta name="tag" content="options" />
+    /// <meta name="tag" content="filter selection" />
     public class BasicTemplateOptionsAlgorithm : QCAlgorithm
     {
-        private const string UnderlyingTicker = "GOOG"; 
+        private const string UnderlyingTicker = "GOOG";
         public readonly Symbol Underlying = QuantConnect.Symbol.Create(UnderlyingTicker, SecurityType.Equity, Market.USA);
         public readonly Symbol OptionSymbol = QuantConnect.Symbol.Create(UnderlyingTicker, SecurityType.Option, Market.USA);
 
@@ -57,15 +59,16 @@ namespace QuantConnect.Algorithm.CSharp
         /// <param name="slice">The current slice of data keyed by symbol string</param>
         public override void OnData(Slice slice)
         {
-            if (!Portfolio.Invested)
+            if (!Portfolio.Invested && IsMarketOpen(OptionSymbol))
             {
                 OptionChain chain;
                 if (slice.OptionChains.TryGetValue(OptionSymbol, out chain))
                 {
-                    // we find at the money (ATM) contract with farthest expiration
+                    // we find at the money (ATM) put contract with farthest expiration
                     var atmContract = chain
                         .OrderByDescending(x => x.Expiry)
                         .ThenBy(x => Math.Abs(chain.Underlying.Price - x.Strike))
+                        .ThenByDescending(x => x.Right)
                         .FirstOrDefault();
 
                     if (atmContract != null)

@@ -1,11 +1,11 @@
 ﻿/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
- * 
- * Licensed under the Apache License, Version 2.0 (the "License"); 
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -19,7 +19,6 @@ using System.Collections.Generic;
 using System.Linq;
 using Newtonsoft.Json;
 using QuantConnect.AlgorithmFactory;
-using QuantConnect.Brokerages;
 using QuantConnect.Brokerages.Backtesting;
 using QuantConnect.Configuration;
 using QuantConnect.Interfaces;
@@ -28,9 +27,7 @@ using QuantConnect.Lean.Engine.Results;
 using QuantConnect.Lean.Engine.TransactionHandlers;
 using QuantConnect.Logging;
 using QuantConnect.Packets;
-using QuantConnect.Securities;
-using QuantConnect.Util;
-using QuantConnect.Data.Market;
+using QuantConnect.Lean.Engine.DataFeeds;
 
 namespace QuantConnect.Lean.Engine.Setup
 {
@@ -42,7 +39,7 @@ namespace QuantConnect.Lean.Engine.Setup
         /// <summary>
         /// Error which occured during setup may appear here.
         /// </summary>
-        public List<string> Errors { get; set; }
+        public List<Exception> Errors { get; set; }
 
         /// <summary>
         /// Maximum runtime of the strategy. (Set to 10 years for local backtesting).
@@ -73,7 +70,7 @@ namespace QuantConnect.Lean.Engine.Setup
             StartingPortfolioValue = 0;
             StartingDate = new DateTime(1998, 01, 01);
             MaximumRuntime = TimeSpan.FromDays(10 * 365);
-            Errors = new List<string>();
+            Errors = new List<Exception>();
         }
 
         /// <summary>
@@ -102,6 +99,7 @@ namespace QuantConnect.Lean.Engine.Setup
         /// </summary>
         /// <param name="algorithmNodePacket">Job packet</param>
         /// <param name="uninitializedAlgorithm">The algorithm instance before Initialize has been called</param>
+        /// <param name="factory">The brokerage factory</param>
         /// <returns>The brokerage instance, or throws if error creating instance</returns>
         public IBrokerage CreateBrokerage(AlgorithmNodePacket algorithmNodePacket, IAlgorithm uninitializedAlgorithm, out IBrokerageFactory factory)
         {
@@ -133,14 +131,27 @@ namespace QuantConnect.Lean.Engine.Setup
                 {
                     var backtestJob = baseJob as BacktestNodePacket;
                     algorithm.SetMaximumOrders(int.MaxValue);
+
                     // set our parameters
                     algorithm.SetParameters(baseJob.Parameters);
                     algorithm.SetLiveMode(false);
                     algorithm.SetAvailableDataTypes(GetConfiguredDataFeeds());
+
                     //Set the source impl for the event scheduling
                     algorithm.Schedule.SetEventSchedule(realTimeHandler);
+
+                    // set the option chain provider
+                    algorithm.SetOptionChainProvider(new CachingOptionChainProvider(new BacktestingOptionChainProvider()));
+
+                    // set the future chain provider
+                    algorithm.SetFutureChainProvider(new CachingFutureChainProvider(new BacktestingFutureChainProvider()));
+
                     //Setup Base Algorithm:
                     algorithm.Initialize();
+
+                    //Finalize Initialization
+                    algorithm.PostInitialize();
+
                     //Set the time frontier of the algorithm
                     algorithm.SetDateTime(algorithm.StartDate.ConvertToUtc(algorithm.TimeZone));
 
@@ -164,15 +175,13 @@ namespace QuantConnect.Lean.Engine.Setup
             catch (Exception err)
             {
                 Log.Error(err);
-                Errors.Add("Failed to initialize algorithm: Initialize(): " + err);
+                Errors.Add(new AlgorithmSetupException("During the algorithm initialization, the following exception has occurred: ", err));
             }
 
             if (Errors.Count == 0)
             {
                 initializeComplete = true;
             }
-
-            algorithm.PostInitialize();
 
             return initializeComplete;
         }

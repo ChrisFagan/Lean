@@ -46,6 +46,12 @@ namespace QuantConnect.Lean.Launcher
                 Console.OutputEncoding = System.Text.Encoding.Unicode;
             }
 
+            // expect first argument to be config file name
+            if (args.Length > 0)
+            {
+                Config.MergeCommandLineArgumentsWithConfiguration(LeanArgumentParser.ParseArguments(args));
+            }
+
             var environment = Config.Get("environment");
             var liveMode = Config.GetBool("live-mode");
             Log.DebuggingEnabled = Config.GetBool("debug-mode");
@@ -119,8 +125,12 @@ namespace QuantConnect.Lean.Launcher
 
             try
             {
+                var algorithmManager = new AlgorithmManager(liveMode);
+
+                leanEngineSystemHandlers.LeanManager.Initialize(leanEngineSystemHandlers, leanEngineAlgorithmHandlers, job, algorithmManager);
+
                 var engine = new Engine.Engine(leanEngineSystemHandlers, leanEngineAlgorithmHandlers, liveMode);
-                engine.Run(job, assemblyPath);
+                engine.Run(job, algorithmManager, assemblyPath);
             }
             finally
             {
@@ -132,6 +142,10 @@ namespace QuantConnect.Lean.Launcher
                 leanEngineSystemHandlers.Dispose();
                 leanEngineAlgorithmHandlers.Dispose();
                 Log.LogHandler.Dispose();
+
+                Log.Trace("Program.Main(): Exiting Lean...");
+
+                Environment.Exit(0);
             }
         }
     }

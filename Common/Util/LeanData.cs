@@ -1,11 +1,11 @@
 ﻿/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
- * 
- * Licensed under the Apache License, Version 2.0 (the "License"); 
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -14,6 +14,7 @@
 */
 
 using System;
+using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -74,24 +75,81 @@ namespace QuantConnect.Util
                     }
                     break;
 
+                case SecurityType.Crypto:
+                    switch (resolution)
+                    {
+                        case Resolution.Tick:
+                            var tick = data as Tick;
+                            if (tick == null) throw new NullReferenceException("Cryto tick could not be created");
+
+                            if (tick.TickType == TickType.Trade)
+                            {
+                                return ToCsv(milliseconds, tick.LastPrice, tick.Quantity);
+                            }
+                            if (tick.TickType == TickType.Quote)
+                            {
+                                return ToCsv(milliseconds, tick.BidPrice, tick.BidSize, tick.AskPrice, tick.AskSize);
+                            }
+                            throw new ArgumentException("Cryto tick could not be created");
+                        case Resolution.Second:
+                        case Resolution.Minute:
+                            var quoteBar = data as QuoteBar;
+                            if (quoteBar != null)
+                            {
+                                return ToCsv(milliseconds,
+                                    ToNonScaledCsv(quoteBar.Bid), quoteBar.LastBidSize,
+                                    ToNonScaledCsv(quoteBar.Ask), quoteBar.LastAskSize);
+                            }
+                            var tradeBar = data as TradeBar;
+                            if (tradeBar != null)
+                            {
+                                return ToCsv(milliseconds, tradeBar.Open, tradeBar.High, tradeBar.Low, tradeBar.Close, tradeBar.Volume);
+                            }
+                            throw new NullReferenceException("Cryto minute/second bar could not be created");
+
+                        case Resolution.Hour:
+                        case Resolution.Daily:
+                            var bigQuoteBar = data as QuoteBar;
+                            if (bigQuoteBar != null)
+                            {
+                                return ToCsv(longTime,
+                                    ToNonScaledCsv(bigQuoteBar.Bid), bigQuoteBar.LastBidSize,
+                                    ToNonScaledCsv(bigQuoteBar.Ask), bigQuoteBar.LastAskSize);
+                            }
+                            var bigTradeBar = data as TradeBar;
+                            if (bigTradeBar != null)
+                            {
+                                return ToCsv(longTime,
+                                             bigTradeBar.Open,
+                                             bigTradeBar.High,
+                                             bigTradeBar.Low,
+                                             bigTradeBar.Close,
+                                             bigTradeBar.Volume);
+                            }
+                            throw new NullReferenceException("Cryto hour/daily bar could not be created");
+                    }
+                    break;
                 case SecurityType.Forex:
                 case SecurityType.Cfd:
                     switch (resolution)
                     {
                         case Resolution.Tick:
-                            var tick = (Tick) data;
+                            var tick = data as Tick;
+                            if (tick == null) throw new NullReferenceException("tick");
                             return ToCsv(milliseconds, tick.BidPrice, tick.AskPrice);
 
                         case Resolution.Second:
                         case Resolution.Minute:
-                            var bar = (QuoteBar) data;
+                            var bar = data as QuoteBar;
+                            if (bar == null) throw new NullReferenceException("bar");
                             return ToCsv(milliseconds,
                                 ToNonScaledCsv(bar.Bid), bar.LastBidSize,
                                 ToNonScaledCsv(bar.Ask), bar.LastAskSize);
 
                         case Resolution.Hour:
                         case Resolution.Daily:
-                            var bigBar = (QuoteBar) data;
+                            var bigBar = data as QuoteBar;
+                            if (bigBar == null) throw new NullReferenceException("big bar");
                             return ToCsv(longTime,
                                 ToNonScaledCsv(bigBar.Bid), bigBar.LastBidSize,
                                 ToNonScaledCsv(bigBar.Ask), bigBar.LastAskSize);
@@ -230,7 +288,7 @@ namespace QuantConnect.Util
                             var bigOpenInterest = data as OpenInterest;
                             if (bigOpenInterest != null)
                             {
-                                return ToCsv(milliseconds, bigOpenInterest.Value);
+                                return ToCsv(longTime, bigOpenInterest.Value);
                             }
                             break;
 
@@ -238,6 +296,9 @@ namespace QuantConnect.Util
                             throw new ArgumentOutOfRangeException("resolution", resolution, null);
                     }
                     break;
+
+                default:
+                    throw new ArgumentOutOfRangeException("securityType", securityType, null);
             }
 
             throw new NotImplementedException("LeanData.GenerateLine has not yet been implemented for security type: " + securityType + " at resolution: " + resolution);
@@ -310,6 +371,7 @@ namespace QuantConnect.Util
                 case SecurityType.Equity:
                 case SecurityType.Forex:
                 case SecurityType.Cfd:
+                case SecurityType.Crypto:
                     return !isHourOrDaily ? Path.Combine(directory, symbol.Value.ToLower()) : directory;
 
                 case SecurityType.Option:
@@ -373,17 +435,28 @@ namespace QuantConnect.Util
                 case SecurityType.Equity:
                 case SecurityType.Forex:
                 case SecurityType.Cfd:
+                case SecurityType.Crypto:
+                    if (resolution == Resolution.Tick && symbol.SecurityType == SecurityType.Equity)
+                    {
+                        return string.Format("{0}_{1}_{2}_{3}.csv",
+                            formattedDate,
+                            symbol.Value.ToLower(),
+                            tickType,
+                            resolution
+                        );
+                    }
+
                     if (isHourOrDaily)
                     {
-                        return string.Format("{0}.csv", 
+                        return string.Format("{0}.csv",
                             symbol.Value.ToLower()
                             );
                     }
 
-                    return string.Format("{0}_{1}_{2}_{3}.csv", 
-                        formattedDate, 
-                        symbol.Value.ToLower(), 
-                        resolution.ToLower(), 
+                    return string.Format("{0}_{1}_{2}_{3}.csv",
+                        formattedDate,
+                        symbol.Value.ToLower(),
+                        resolution.ToLower(),
                         tickType.ToLower()
                         );
 
@@ -440,9 +513,9 @@ namespace QuantConnect.Util
         /// </summary>
         public static string GenerateZipEntryName(string symbol, SecurityType securityType, DateTime date, Resolution resolution, TickType dataType = TickType.Trade)
         {
-            if (securityType != SecurityType.Base && securityType != SecurityType.Equity && securityType != SecurityType.Forex && securityType != SecurityType.Cfd)
+            if (securityType != SecurityType.Base && securityType != SecurityType.Equity && securityType != SecurityType.Forex && securityType != SecurityType.Cfd && securityType != SecurityType.Crypto)
             {
-                throw new NotImplementedException("This method only implements base, equity, forex and cfd security type.");
+                throw new NotImplementedException("This method only implements base, equity, forex, crypto and cfd security type.");
             }
 
             symbol = symbol.ToLower();
@@ -478,28 +551,40 @@ namespace QuantConnect.Util
                 case SecurityType.Cfd:
                     if (isHourOrDaily)
                     {
-                        return string.Format("{0}.zip", 
+                        return string.Format("{0}.zip",
                             symbol.Value.ToLower()
                             );
                     }
 
-                    return string.Format("{0}_{1}.zip", 
-                        formattedDate, 
+                    return string.Format("{0}_{1}.zip",
+                        formattedDate,
                         tickTypeString
                         );
+                case SecurityType.Crypto:
+                    if (isHourOrDaily)
+                    {
+                        return string.Format("{0}_{1}.zip",
+                            symbol.Value.ToLower(),
+                            tickTypeString
+                        );
+                    }
 
+                    return string.Format("{0}_{1}.zip",
+                        formattedDate,
+                        tickTypeString
+                    );
                 case SecurityType.Option:
                     if (isHourOrDaily)
                     {
-                        return string.Format("{0}_{1}_{2}.zip", 
+                        return string.Format("{0}_{1}_{2}.zip",
                             symbol.Underlying.Value.ToLower(), // underlying
                             tickTypeString,
                             symbol.ID.OptionStyle.ToLower()
                             );
                     }
 
-                    return string.Format("{0}_{1}_{2}.zip", 
-                        formattedDate, 
+                    return string.Format("{0}_{1}_{2}.zip",
+                        formattedDate,
                         tickTypeString,
                         symbol.ID.OptionStyle.ToLower()
                         );
@@ -545,7 +630,7 @@ namespace QuantConnect.Util
         /// <returns>The most common tick type for the specified security type</returns>
         public static TickType GetCommonTickType(SecurityType securityType)
         {
-            if (securityType == SecurityType.Forex || securityType == SecurityType.Cfd)
+            if (securityType == SecurityType.Forex || securityType == SecurityType.Cfd || securityType == SecurityType.Crypto)
             {
                 return TickType.Quote;
             }
@@ -572,7 +657,7 @@ namespace QuantConnect.Util
                         var right = (OptionRight)Enum.Parse(typeof(OptionRight), parts[3], true);
                         var strike = decimal.Parse(parts[4]) / 10000m;
                         var expiry = DateTime.ParseExact(parts[5], DateFormat.EightCharacter, null);
-                        return Symbol.CreateOption(symbol.Underlying, Market.USA, style, right, strike, expiry);
+                        return Symbol.CreateOption(symbol.Underlying, symbol.ID.Market, style, right, strike, expiry);
                     }
                     else
                     {
@@ -580,18 +665,27 @@ namespace QuantConnect.Util
                         var right = (OptionRight)Enum.Parse(typeof(OptionRight), parts[5], true);
                         var strike = decimal.Parse(parts[6]) / 10000m;
                         var expiry = DateTime.ParseExact(parts[7], DateFormat.EightCharacter, null);
-                        return Symbol.CreateOption(symbol.Underlying, Market.USA, style, right, strike, expiry);
+                        return Symbol.CreateOption(symbol.Underlying, symbol.ID.Market, style, right, strike, expiry);
                     }
-                    break;
 
                 case SecurityType.Future:
-                    var expiryYearMonth = DateTime.ParseExact(parts[4], DateFormat.YearMonth, null);
-                    var futureExpiryFunc = FuturesExpiryFunctions.FuturesExpiryFunction(parts[1]);
-                    var futureExpiry = futureExpiryFunc(expiryYearMonth);
-                    return Symbol.CreateFuture(parts[1], Market.USA, futureExpiry);
+                    if (isHourlyOrDaily)
+                    {
+                        var expiryYearMonth = DateTime.ParseExact(parts[2], DateFormat.YearMonth, null);
+                        var futureExpiryFunc = FuturesExpiryFunctions.FuturesExpiryFunction(parts[1]);
+                        var futureExpiry = futureExpiryFunc(expiryYearMonth);
+                        return Symbol.CreateFuture(parts[0], symbol.ID.Market, futureExpiry);
+                    }
+                    else
+                    {
+                        var expiryYearMonth = DateTime.ParseExact(parts[4], DateFormat.YearMonth, null);
+                        var futureExpiryFunc = FuturesExpiryFunctions.FuturesExpiryFunction(parts[1]);
+                        var futureExpiry = futureExpiryFunc(expiryYearMonth);
+                        return Symbol.CreateFuture(parts[1], symbol.ID.Market, futureExpiry);
+                    }
 
                 default:
-                    throw new NotImplementedException("ReadSymbolFromZipEntry is not implemented for " + symbol.ID.SecurityType + " " + resolution);
+                    throw new NotImplementedException($"ReadSymbolFromZipEntry is not implemented for {symbol.ID.SecurityType} {symbol.ID.Market} {resolution}");
             }
         }
 
@@ -675,7 +769,7 @@ namespace QuantConnect.Util
             }
             if (type == typeof(Tick))
             {
-                if (securityType == SecurityType.Forex || securityType == SecurityType.Cfd)
+                if (securityType == SecurityType.Forex || securityType == SecurityType.Cfd || securityType == SecurityType.Crypto)
                 {
                     return TickType.Quote;
                 }
@@ -723,15 +817,15 @@ namespace QuantConnect.Util
                 resolution = (Resolution)Enum.Parse(typeof(Resolution), info[startIndex + 2], true);
                 var securityType = (SecurityType)Enum.Parse(typeof(SecurityType), info[startIndex], true);
 
-                if (securityType == SecurityType.Option || securityType == SecurityType.Future)
-                {
-                    throw new ArgumentException("LeanData.TryParsePath(): Options and futures are not supported by this method.");
-                }
-
                 // If resolution is Daily or Hour, we do not need to set the date and tick type
                 if (resolution < Resolution.Hour)
                 {
                     date = DateTime.ParseExact(info[startIndex + 4].Substring(0, 8), DateFormat.EightCharacter, null);
+                }
+
+                if (securityType == SecurityType.Crypto)
+                {
+                    ticker = ticker.Split('_').First();
                 }
 
                 symbol = Symbol.Create(ticker, securityType, market);
