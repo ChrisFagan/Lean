@@ -1,5 +1,4 @@
-![alt tag](Documentation/logo.white.small.png)
-Lean Algorithmic Trading Engine
+![alt tag](https://cdn.quantconnect.com/web/i/20180601-1615-lean-logo-small.png)
 =========
 
 [![Build Status](https://travis-ci.org/QuantConnect/Lean.svg?branch=feature%2Fremove-web-socket-4-net)](https://travis-ci.org/QuantConnect/Lean) &nbsp;&nbsp;&nbsp; [![Google Group](https://img.shields.io/badge/debug-Google%20Group-53c82b.svg)](https://groups.google.com/forum/#!forum/lean-engine) &nbsp;&nbsp;&nbsp; [![Slack Chat](https://img.shields.io/badge/chat-Slack-53c82b.svg)](https://www.quantconnect.com/slack)
@@ -71,7 +70,9 @@ mono QuantConnect.Lean.Launcher.exe
 ```
 sudo apt-get update && sudo rm -rf /var/lib/apt/lists/*
 sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys 3FA7E0328081BFF6A14DA29AA6A19B38D3D831EF
-echo "deb http://download.mono-project.com/repo/debian wheezy/snapshots/4.6.1.5 main" > sudo /etc/apt/sources.list.d/mono-xamarin.list
+echo "deb http://download.mono-project.com/repo/ubuntu stable-xenial/snapshots/5.12.0.226 main" > /etc/apt/sources.list.d/mono-xamarin.list && \
+    apt-get update && apt-get install -y binutils mono-complete ca-certificates-mono mono-vbnc nuget referenceassemblies-pcl && \
+apt-get install -y fsharp && rm -rf /var/lib/apt/lists/* /tmp/*
 ```
 If you get this error on the last command:
  
