@@ -61,8 +61,8 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
                     Logging.Log.Trace($"AlgorithmPythonWrapper(): Python version {PythonEngine.Version}: Importing python module {moduleName}");
 
                     var module = Py.Import(moduleName);
-
-                    foreach (var name in module.Dir())
+                    var pyList = module.Dir();
+                    foreach (var name in pyList)
                     {
                         Type type;
                         var attr = module.GetAttr(name.ToString());
@@ -90,12 +90,14 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
 
                             _onOrderEvent = (_algorithm as PyObject).GetAttr("OnOrderEvent");
                         }
+                        attr.Dispose();
                     }
-
+                    module.Dispose();
+                    pyList.Dispose();
                     // If _algorithm could not be set, throw exception
                     if (_algorithm == null)
                     {
-                        throw new Exception("Please ensure that one class inherits from QCAlgorithm or QCAlgorithmFramework.");
+                        throw new Exception("Please ensure that one class inherits from QCAlgorithm.");
                     }
                 }
             }
@@ -172,11 +174,6 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
                 SetHistoryProvider(value);
             }
         }
-
-        /// <summary>
-        /// Gets a flag indicating whether or not this algorithm uses the QCAlgorithmFramework
-        /// </summary>
-        public bool IsFrameworkAlgorithm => _baseAlgorithm.IsFrameworkAlgorithm;
 
         /// <summary>
         /// Gets whether or not this algorithm is still warming up
@@ -674,7 +671,7 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         }
 
         /// <summary>
-        /// Margin call warning event handler. This method is called when Portoflio.MarginRemaining is under 5% of your Portfolio.TotalPortfolioValue
+        /// Margin call warning event handler. This method is called when Portfolio.MarginRemaining is under 5% of your Portfolio.TotalPortfolioValue
         /// </summary>
         public void OnMarginCallWarning()
         {
@@ -889,5 +886,13 @@ namespace QuantConnect.AlgorithmFactory.Python.Wrappers
         /// </summary>
         /// <param name="slice">The Slice object</param>
         public void SetCurrentSlice(Slice slice) => _baseAlgorithm.SetCurrentSlice(slice);
+
+        /// <summary>
+        /// Sets the order event provider
+        /// </summary>
+        /// <param name="newOrderEvent">The order event provider</param>
+        /// <remarks>Will be called before the <see cref="SecurityPortfolioManager"/></remarks>
+        public void SetOrderEventProvider(IOrderEventProvider newOrderEvent)
+            => _baseAlgorithm.SetOrderEventProvider(newOrderEvent);
     }
 }

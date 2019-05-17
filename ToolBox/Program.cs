@@ -26,7 +26,6 @@ using QuantConnect.ToolBox.DukascopyDownloader;
 using QuantConnect.ToolBox.FxcmDownloader;
 using QuantConnect.ToolBox.FxcmVolumeDownload;
 using QuantConnect.ToolBox.GDAXDownloader;
-using QuantConnect.ToolBox.GoogleDownloader;
 using QuantConnect.ToolBox.IBDownloader;
 using QuantConnect.ToolBox.IEX;
 using QuantConnect.ToolBox.IVolatilityEquityConverter;
@@ -85,10 +84,6 @@ namespace QuantConnect.ToolBox
                     case "fxcmvolumedownload":
                         FxcmVolumeDownloadProgram.FxcmVolumeDownload(tickers, resolution, fromDate, toDate);
                         break;
-                    case "gdl":
-                    case "googledownloader":
-                        GoogleDownloaderProgram.GoogleDownloader(tickers, resolution, fromDate, toDate);
-                        break;
                     case "ibdl":
                     case "ibdownloader":
                         IBDownloaderProgram.IBDownloader(tickers, resolution, fromDate, toDate);
@@ -144,7 +139,8 @@ namespace QuantConnect.ToolBox
                     case "kdc":
                     case "kaikodataconverter":
                         KaikoDataConverterProgram.KaikoDataConverter(GetParameterOrExit(optionsObject, "source-dir"),
-                                                                     GetParameterOrExit(optionsObject, "date"));
+                                                                     GetParameterOrExit(optionsObject, "date"),
+                                                                     GetParameterOrDefault(optionsObject, "exchange", string.Empty));
                         break;
                     case "nmdc":
                     case "nsemarketdataconverter":
@@ -164,15 +160,21 @@ namespace QuantConnect.ToolBox
                     case "rdg":
                     case "randomdatagenerator":
                         RandomDataGeneratorProgram.RandomDataGenerator(
-                            GetParameterOrExit(optionsObject, "from-date"),
-                            GetParameterOrExit(optionsObject, "to-date"),
+                            GetParameterOrExit(optionsObject, "start"),
+                            GetParameterOrExit(optionsObject, "end"),
                             GetParameterOrExit(optionsObject, "symbol-count"),
                             GetParameterOrDefault(optionsObject, "market", null),
                             GetParameterOrDefault(optionsObject, "security-type", "Equity"),
                             GetParameterOrDefault(optionsObject, "resolution", "Minute"),
                             GetParameterOrDefault(optionsObject, "data-density", "Dense"),
                             GetParameterOrDefault(optionsObject, "include-coarse", "true"),
-                            GetParameterOrDefault(optionsObject, "quote-trade-ratio", "1")
+                            GetParameterOrDefault(optionsObject, "quote-trade-ratio", "1"),
+                            GetParameterOrDefault(optionsObject, "random-seed", null),
+                            GetParameterOrDefault(optionsObject, "ipo-percentage", "5.0"),
+                            GetParameterOrDefault(optionsObject, "rename-percentage", "30.0"),
+                            GetParameterOrDefault(optionsObject, "splits-percentage", "15.0"),
+                            GetParameterOrDefault(optionsObject, "dividends-percentage", "60.0"),
+                            GetParameterOrDefault(optionsObject, "dividend-every-quarter-percentage", "30.0")
                         );
                         break;
                     default:

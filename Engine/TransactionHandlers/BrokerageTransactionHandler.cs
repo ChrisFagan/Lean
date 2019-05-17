@@ -99,6 +99,12 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
         private readonly object _lockHandleOrderEvent = new object();
 
         /// <summary>
+        /// Event fired when there is a new <see cref="QuantConnect.Orders.OrderEvent"/>
+        /// </summary>
+        /// <remarks>Will be called before the <see cref="SecurityPortfolioManager"/></remarks>
+        public event EventHandler<OrderEvent> NewOrderEvent;
+
+        /// <summary>
         /// Gets the permanent storage for all orders
         /// </summary>
         public ConcurrentDictionary<int, Order> Orders
@@ -231,6 +237,17 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
                 _openOrderTickets.TryAdd(ticket.OrderId, ticket);
                 _completeOrderTickets.TryAdd(ticket.OrderId, ticket);
                 _orderRequestQueue.Add(request);
+
+                // wait for the transaction handler to set the order reference into the new order ticket,
+                // so we can ensure the order has already been added to the open orders,
+                // before returning the ticket to the algorithm.
+
+                var orderSetTimeout = Time.OneSecond;
+                if (!ticket.OrderSet.WaitOne(orderSetTimeout))
+                {
+                    Log.Error("BrokerageTransactionHandler.ProcessRequest(): " +
+                              $"The order request (Id={ticket.OrderId}) was not processed within {orderSetTimeout.TotalSeconds} second(s).");
+                }
             }
             else
             {
@@ -638,7 +655,7 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
                     else
                     {
                         //Set the cash amount to zero if cash entry not found in the balances
-                        Log.LogHandler.Trace($"BrokerageTransactionHandler.PerformCashSync(): {cash.Symbol} was not found" +
+                        Log.LogHandler.Trace($"BrokerageTransactionHandler.PerformCashSync(): {cash.Symbol} was not found " +
                             "in brokerage cash balance, setting the amount to 0");
                         _algorithm.Portfolio.CashBook[cash.Symbol].SetAmount(0);
                     }
@@ -1012,6 +1029,19 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
                     case OrderStatus.PartiallyFilled:
                     case OrderStatus.Filled:
                         order.LastFillTime = fill.UtcTime;
+
+                        // append fill message to order tag, for additional information
+                        if (fill.Status == OrderStatus.Filled && !string.IsNullOrWhiteSpace(fill.Message))
+                        {
+                            if (string.IsNullOrWhiteSpace(order.Tag))
+                            {
+                                order.Tag = fill.Message;
+                            }
+                            else
+                            {
+                                order.Tag += " - " + fill.Message;
+                            }
+                        }
                         break;
 
                     case OrderStatus.Submitted:
@@ -1052,8 +1082,10 @@ namespace QuantConnect.Lean.Engine.TransactionHandlers
 
                     try
                     {
-                        _algorithm.Portfolio.ProcessFill(fill);
+                        // to be called before updating the Portfolio
+                        NewOrderEvent?.Invoke(this, fill);
 
+                        _algorithm.Portfolio.ProcessFill(fill);
                         _algorithm.TradeBuilder.ProcessFill(
                             fill,
                             securityConversionRate,

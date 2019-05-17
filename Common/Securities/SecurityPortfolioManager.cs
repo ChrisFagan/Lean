@@ -301,7 +301,7 @@ namespace QuantConnect.Securities
         /// </summary>
         public decimal TotalAbsoluteHoldingsCost
         {
-            get { return Securities.Sum(x => x.Value.Holdings.AbsoluteHoldingsCost); }
+            get { return Securities.Aggregate(0m, (d, pair) => d + pair.Value.Holdings.AbsoluteHoldingsCost); }
         }
 
         /// <summary>
@@ -369,19 +369,26 @@ namespace QuantConnect.Securities
             get
             {
                 // we can't include forex in this calculation since we would be double accounting with respect to the cash book
-                // we exclude futures as they are calculated separately
-                decimal totalHoldingsValueWithoutForexAndCrypto = 0;
+                // we also exclude futures and CFD as they are calculated separately
+                decimal totalHoldingsValueWithoutForexCryptoFutureCfd = 0;
                 foreach (var kvp in Securities)
                 {
                     var position = kvp.Value;
                     if (position.Type != SecurityType.Forex && position.Type != SecurityType.Crypto &&
-                        position.Type != SecurityType.Future) totalHoldingsValueWithoutForexAndCrypto += position.Holdings.HoldingsValue;
+                        position.Type != SecurityType.Future && position.Type != SecurityType.Cfd)
+                    {
+                        totalHoldingsValueWithoutForexCryptoFutureCfd += position.Holdings.HoldingsValue;
+                    }
                 }
 
-                var totalFuturesHoldingsValue = Securities.Where(x => x.Value.Type == SecurityType.Future)
-                                                           .Sum(x => x.Value.Holdings.UnrealizedProfit);
+                var totalFuturesAndCfdHoldingsValue = Securities
+                    .Where(x => x.Value.Type == SecurityType.Future || x.Value.Type == SecurityType.Cfd)
+                    .Aggregate(0m, (d, pair) => d + pair.Value.Holdings.UnrealizedProfit);
 
-                return CashBook.TotalValueInAccountCurrency + UnsettledCashBook.TotalValueInAccountCurrency + totalHoldingsValueWithoutForexAndCrypto + totalFuturesHoldingsValue;
+                return CashBook.TotalValueInAccountCurrency +
+                       UnsettledCashBook.TotalValueInAccountCurrency +
+                       totalHoldingsValueWithoutForexCryptoFutureCfd +
+                       totalFuturesAndCfdHoldingsValue;
             }
         }
 
@@ -443,9 +450,20 @@ namespace QuantConnect.Securities
         /// <summary>
         /// Gets the remaining margin on the account in the account's currency
         /// </summary>
-        public decimal MarginRemaining
+        /// <see cref="GetMarginRemaining(decimal)"/>
+        public decimal MarginRemaining => GetMarginRemaining(TotalPortfolioValue);
+
+        /// <summary>
+        /// Gets the remaining margin on the account in the account's currency
+        /// for the given total portfolio value
+        /// </summary>
+        /// <remarks>This method is for performance, for when the user already knows
+        /// the total portfolio value, we can avoid re calculating it. Else use
+        /// <see cref="MarginRemaining"/></remarks>
+        /// <param name="totalPortfolioValue">The total portfolio value <see cref="TotalPortfolioValue"/></param>
+        public decimal GetMarginRemaining(decimal totalPortfolioValue)
         {
-            get { return TotalPortfolioValue - UnsettledCashBook.TotalValueInAccountCurrency - TotalMarginUsed; }
+            return totalPortfolioValue - UnsettledCashBook.TotalValueInAccountCurrency - TotalMarginUsed;
         }
 
         /// <summary>

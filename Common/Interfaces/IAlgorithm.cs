@@ -157,14 +157,6 @@ namespace QuantConnect.Interfaces
         }
 
         /// <summary>
-        /// Gets a flag indicating whether or not this algorithm uses the QCAlgorithmFramework
-        /// </summary>
-        bool IsFrameworkAlgorithm
-        {
-            get;
-        }
-
-        /// <summary>
         /// Gets whether or not this algorithm is still warming up
         /// </summary>
         bool IsWarmingUp
@@ -444,7 +436,7 @@ namespace QuantConnect.Interfaces
         void OnMarginCall(List<SubmitOrderRequest> requests);
 
         /// <summary>
-        /// Margin call warning event handler. This method is called when Portoflio.MarginRemaining is under 5% of your Portfolio.TotalPortfolioValue
+        /// Margin call warning event handler. This method is called when Portfolio.MarginRemaining is under 5% of your Portfolio.TotalPortfolioValue
         /// </summary>
         void OnMarginCallWarning();
 
@@ -669,5 +661,12 @@ namespace QuantConnect.Interfaces
         /// </summary>
         /// <param name="slice">The Slice object</param>
         void SetCurrentSlice(Slice slice);
+
+        /// <summary>
+        /// Sets the order event provider
+        /// </summary>
+        /// <param name="newOrderEvent">The order event provider</param>
+        /// <remarks>Will be called before the <see cref="SecurityPortfolioManager"/></remarks>
+        void SetOrderEventProvider(IOrderEventProvider newOrderEvent);
     }
 }
