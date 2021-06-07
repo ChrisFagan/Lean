@@ -21,7 +21,6 @@ using System.Net;
 using QuantConnect.Data;
 using QuantConnect.Data.Market;
 using QuantConnect.Logging;
-using SevenZip;
 
 namespace QuantConnect.ToolBox.DukascopyDownloader
 {
@@ -154,8 +153,9 @@ namespace QuantConnect.ToolBox.DukascopyDownloader
             {
                 var timeOffset = hour * 3600000;
 
-                var url = string.Format(@"http://www.dukascopy.com/datafeed/{0}/{1:D4}/{2:D2}/{3:D2}/{4:D2}h_ticks.bi5",
-                    dukascopySymbol, date.Year, date.Month - 1, date.Day, hour);
+                var url = $"http://www.dukascopy.com/datafeed/{dukascopySymbol}/" +
+                          $"{date.Year.ToStringInvariant("D4")}/{(date.Month - 1).ToStringInvariant("D2")}/" +
+                          $"{date.Day.ToStringInvariant("D2")}/{hour.ToStringInvariant("D2")}h_ticks.bi5";
 
                 using (var client = new WebClient())
                 {
@@ -193,42 +193,63 @@ namespace QuantConnect.ToolBox.DukascopyDownloader
         {
             var ticks = new List<Tick>();
 
-            using (var inStream = new MemoryStream(bytesBi5))
+            byte[] bytes;
+
+            var inputFile = $"{Guid.NewGuid()}.7z";
+            var outputDirectory = $"{Guid.NewGuid()}";
+
+            try
             {
-                using (var outStream = new MemoryStream())
+                File.WriteAllBytes(inputFile, bytesBi5);
+                Compression.Extract7ZipArchive(inputFile, outputDirectory);
+
+                var outputFileInfo = Directory.CreateDirectory(outputDirectory).GetFiles("*").First();
+                bytes = File.ReadAllBytes(outputFileInfo.FullName);
+            }
+            catch (Exception err)
+            {
+                Log.Error(err, "Failed to read raw data into stream");
+                return new List<Tick>();
+            }
+            finally
+            {
+                if (File.Exists(inputFile))
                 {
-                    SevenZipExtractor.DecompressStream(inStream, outStream, (int)inStream.Length, null);
+                    File.Delete(inputFile);
+                }
+                if (Directory.Exists(outputDirectory))
+                {
+                    Directory.Delete(outputDirectory, true);
+                }
+            }
 
-                    byte[] bytes = outStream.ToArray();
-                    int count = bytes.Length / DukascopyTickLength;
+            int count = bytes.Length / DukascopyTickLength;
 
-                    // Numbers are big-endian
-                    // ii1 = milliseconds within the hour
-                    // ii2 = AskPrice * point value
-                    // ii3 = BidPrice * point value
-                    // ff1 = AskVolume (not used)
-                    // ff2 = BidVolume (not used)
+            // Numbers are big-endian
+            // ii1 = milliseconds within the hour
+            // ii2 = AskPrice * point value
+            // ii3 = BidPrice * point value
+            // ff1 = AskVolume (not used)
+            // ff2 = BidVolume (not used)
 
-                    fixed (byte* pBuffer = &bytes[0])
+            fixed (byte* pBuffer = &bytes[0])
+            {
+                uint* p = (uint*)pBuffer;
+
+                for (int i = 0; i < count; i++)
+                {
+                    ReverseBytes(p); uint time = *p++;
+                    ReverseBytes(p); uint ask = *p++;
+                    ReverseBytes(p); uint bid = *p++;
+                    p++; p++;
+
+                    if (bid > 0 && ask > 0)
                     {
-                        uint* p = (uint*)pBuffer;
-
-                        for (int i = 0; i < count; i++)
-                        {
-                            ReverseBytes(p); uint time = *p++;
-                            ReverseBytes(p); uint ask = *p++;
-                            ReverseBytes(p); uint bid = *p++;
-                            p++; p++;
-
-                            if (bid > 0 && ask > 0)
-                            {
-                                ticks.Add(new Tick(
-                                    date.AddMilliseconds(timeOffset + time),
-                                    symbol,
-                                    Convert.ToDecimal(bid / pointValue),
-                                    Convert.ToDecimal(ask / pointValue)));
-                            }
-                        }
+                        ticks.Add(new Tick(
+                            date.AddMilliseconds(timeOffset + time),
+                            symbol,
+                            Convert.ToDecimal(bid / pointValue),
+                            Convert.ToDecimal(ask / pointValue)));
                     }
                 }
             }

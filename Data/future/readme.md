@@ -10,12 +10,15 @@ Futures data can be used with the following Resolutions:
 * Tick
 * Second
 * Minute
-* Hour
-* Daily
 
 The markets we currently support are:
 
-* USA
+* CBOT
+* CME 
+* NYMEX
+* COMEX
+* CBOE
+* ICE
 
 `tickType` in this documentation can refer to one of the following:
 

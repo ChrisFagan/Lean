@@ -19,7 +19,6 @@ using System.Collections;
 using System.Collections.Generic;
 using QuantConnect.Data;
 using QuantConnect.Data.Auxiliary;
-using QuantConnect.Data.Market;
 
 namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators
 {
@@ -32,7 +31,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators
     {
         private readonly IEnumerator<BaseData> _rawDataEnumerator;
         private readonly SubscriptionDataConfig _config;
-        private readonly FactorFile _factorFile;
+        private readonly Lazy<FactorFile> _factorFile;
         private DateTime _lastTradableDate;
 
         /// <summary>
@@ -59,7 +58,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators
         public PriceScaleFactorEnumerator(
             IEnumerator<BaseData> rawDataEnumerator,
             SubscriptionDataConfig config,
-            FactorFile factorFile)
+            Lazy<FactorFile> factorFile)
         {
             _lastTradableDate = DateTime.MinValue;
             _config = config;
@@ -89,7 +88,8 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators
 
             if (underlyingReturnValue
                 && Current != null
-                && _factorFile != null)
+                && _factorFile != null
+                && _config.DataNormalizationMode != DataNormalizationMode.Raw)
             {
                 if (Current.Time.Date > _lastTradableDate)
                 {
@@ -97,87 +97,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators
                     UpdateScaleFactor(_lastTradableDate);
                 }
 
-                var securityType = Current.Symbol.SecurityType;
-                switch (Current.DataType)
-                {
-                    case MarketDataType.TradeBar:
-                        var tradeBar = Current as TradeBar;
-                        if (tradeBar != null)
-                        {
-                            tradeBar.Open = _config.GetNormalizedPrice(tradeBar.Open);
-                            tradeBar.High = _config.GetNormalizedPrice(tradeBar.High);
-                            tradeBar.Low = _config.GetNormalizedPrice(tradeBar.Low);
-                            tradeBar.Close = _config.GetNormalizedPrice(tradeBar.Close);
-                        }
-                        break;
-                    case MarketDataType.Tick:
-                        var tick = Current as Tick;
-                        if (tick != null)
-                        {
-                            if (securityType == SecurityType.Equity)
-                            {
-                                tick.Value = _config.GetNormalizedPrice(tick.Value);
-                            }
-                            if (securityType == SecurityType.Option
-                                || securityType == SecurityType.Future)
-                            {
-                                if (tick.TickType == TickType.Trade)
-                                {
-                                    tick.Value = _config.GetNormalizedPrice(tick.Value);
-                                }
-                                else if (tick.TickType != TickType.OpenInterest)
-                                {
-                                    tick.BidPrice = tick.BidPrice != 0 ? _config.GetNormalizedPrice(tick.BidPrice) : 0;
-                                    tick.AskPrice = tick.AskPrice != 0 ?_config.GetNormalizedPrice(tick.AskPrice) : 0;
-
-                                    if (tick.BidPrice != 0)
-                                    {
-                                        if (tick.AskPrice != 0)
-                                        {
-                                            tick.Value = (tick.BidPrice + tick.AskPrice) / 2m;
-                                        }
-                                        else
-                                        {
-                                            tick.Value = tick.BidPrice;
-                                        }
-                                    }
-                                    else
-                                    {
-                                        tick.Value = tick.AskPrice;
-                                    }
-                                }
-                            }
-                        }
-                        break;
-                    case MarketDataType.QuoteBar:
-                        var quoteBar = Current as QuoteBar;
-                        if (quoteBar != null)
-                        {
-                            if (quoteBar.Ask != null)
-                            {
-                                quoteBar.Ask.Open = _config.GetNormalizedPrice(quoteBar.Ask.Open);
-                                quoteBar.Ask.High = _config.GetNormalizedPrice(quoteBar.Ask.High);
-                                quoteBar.Ask.Low = _config.GetNormalizedPrice(quoteBar.Ask.Low);
-                                quoteBar.Ask.Close = _config.GetNormalizedPrice(quoteBar.Ask.Close);
-                            }
-                            if (quoteBar.Bid != null)
-                            {
-                                quoteBar.Bid.Open = _config.GetNormalizedPrice(quoteBar.Bid.Open);
-                                quoteBar.Bid.High = _config.GetNormalizedPrice(quoteBar.Bid.High);
-                                quoteBar.Bid.Low = _config.GetNormalizedPrice(quoteBar.Bid.Low);
-                                quoteBar.Bid.Close = _config.GetNormalizedPrice(quoteBar.Bid.Close);
-                            }
-                            quoteBar.Value = quoteBar.Close;
-                        }
-                        break;
-                    case MarketDataType.Auxiliary:
-                    case MarketDataType.Base:
-                    case MarketDataType.OptionChain:
-                    case MarketDataType.FuturesChain:
-                        break;
-                    default:
-                        throw new ArgumentOutOfRangeException();
-                }
+                Current = Current.Normalize(_config);
             }
 
             return underlyingReturnValue;
@@ -201,11 +121,11 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators
 
                 case DataNormalizationMode.TotalReturn:
                 case DataNormalizationMode.SplitAdjusted:
-                    _config.PriceScaleFactor = _factorFile.GetSplitFactor(date);
+                    _config.PriceScaleFactor = _factorFile.Value.GetSplitFactor(date);
                     break;
 
                 case DataNormalizationMode.Adjusted:
-                    _config.PriceScaleFactor = _factorFile.GetPriceScaleFactor(date);
+                    _config.PriceScaleFactor = _factorFile.Value.GetPriceScaleFactor(date);
                     break;
 
                 default:

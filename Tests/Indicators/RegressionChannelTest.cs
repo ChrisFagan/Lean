@@ -46,10 +46,10 @@ namespace QuantConnect.Tests.Indicators
             }
             Assert.AreEqual(expected, actual);
 
-            var expectedUpper = indicator.Current + stdDev.Current * 2;
-            Assert.AreEqual(expectedUpper, indicator.UpperChannel);
-            var expectedLower = indicator.Current - stdDev.Current * 2;
-            Assert.AreEqual(expectedLower, indicator.LowerChannel);
+            var expectedUpper = indicator.Current.Value + stdDev.Current.Value * 2;
+            Assert.AreEqual(expectedUpper, indicator.UpperChannel.Current.Value);
+            var expectedLower = indicator.Current.Value - stdDev.Current.Value * 2;
+            Assert.AreEqual(expectedLower, indicator.LowerChannel.Current.Value);
         }
 
         [Test]
@@ -66,6 +66,21 @@ namespace QuantConnect.Tests.Indicators
             Assert.IsTrue(indicator.IsReady, "Regression Channel ready");
             indicator.Reset();
             TestHelper.AssertIndicatorIsInDefaultState(indicator);
+        }
+
+        [Test]
+        public void WarmsUpProperly()
+        {
+            var indicator = new RegressionChannel(20, 2);
+            var period = ((IIndicatorWarmUpPeriodProvider)indicator).WarmUpPeriod;
+            var prices = LeastSquaresMovingAverageTest.Prices;
+            var time = DateTime.Now;
+
+            for (var i = 0; i < period; i++)
+            {
+                indicator.Update(time.AddMinutes(i), prices[i]);
+                Assert.AreEqual(i == period - 1, indicator.IsReady);
+            }
         }
 
         [Test]

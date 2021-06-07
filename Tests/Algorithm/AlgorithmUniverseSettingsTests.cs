@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -16,7 +16,6 @@
 using NUnit.Framework;
 using QuantConnect.Algorithm;
 using QuantConnect.Data.UniverseSelection;
-using QuantConnect.Interfaces;
 using QuantConnect.Lean.Engine.DataFeeds;
 using QuantConnect.Securities;
 using System;
@@ -40,6 +39,8 @@ namespace QuantConnect.Tests.Algorithm
             var symbol = Symbols.SPY;
             algorithm.UniverseSettings.DataNormalizationMode = dataNormalizationMode;
             algorithm.AddUniverse(coarse => new[] { symbol });
+            // OnEndOfTimeStep will add all pending universe additions
+            algorithm.OnEndOfTimeStep();
 
             var changes = dataManager.UniverseSelection
                 .ApplyUniverseSelection(
@@ -68,6 +69,8 @@ namespace QuantConnect.Tests.Algorithm
             var symbol = spy.Symbol;
             algorithm.UniverseSettings.DataNormalizationMode = DataNormalizationMode.Raw;
             algorithm.AddUniverse(coarse => new[] { symbol });
+            // OnEndOfTimeStep will add all pending universe additions
+            algorithm.OnEndOfTimeStep();
 
             var changes = dataManager.UniverseSelection
                 .ApplyUniverseSelection(
@@ -83,13 +86,54 @@ namespace QuantConnect.Tests.Algorithm
             Assert.AreEqual(expected, security.DataNormalizationMode);
         }
 
+        [Test]
+        public void CheckManualSecurityDataNormalizationModePersistenceAfterUniverseSetting()
+        {
+            var tuple = GetAlgorithmAndDataManager();
+            var algorithm = tuple.Item1;
+            var dataManager = tuple.Item2;
+
+            // Set our universe mode to raw
+            var universeMode = DataNormalizationMode.Raw;
+            algorithm.UniverseSettings.DataNormalizationMode = universeMode;
+
+            // Verify that the security was set to raw
+            var spy = algorithm.AddEquity("SPY");
+            Assert.AreEqual(universeMode, spy.DataNormalizationMode);
+
+            // Modify the mode of the security manually
+            var manualMode = DataNormalizationMode.TotalReturn;
+            spy.SetDataNormalizationMode(manualMode);
+            Assert.AreEqual(manualMode, spy.DataNormalizationMode);
+
+            var symbol = spy.Symbol;
+            algorithm.AddUniverse(coarse => new[] { symbol });
+            // OnEndOfTimeStep will add all pending universe additions
+            algorithm.OnEndOfTimeStep();
+
+            var changes = dataManager.UniverseSelection
+                .ApplyUniverseSelection(
+                    algorithm.UniverseManager.First().Value,
+                    algorithm.UtcTime,
+                    new BaseDataCollection(algorithm.UtcTime, null, Enumerable.Empty<CoarseFundamental>()));
+
+            Assert.AreEqual(1, changes.AddedSecurities.Count());
+
+            var security = changes.AddedSecurities.First();
+            Assert.AreEqual(symbol, security.Symbol);
+            Assert.AreEqual(spy, security);
+
+            // Assert that our manual setting persisted
+            Assert.AreEqual(manualMode, security.DataNormalizationMode);
+        }
+
         private Tuple<QCAlgorithm, DataManager> GetAlgorithmAndDataManager()
         {
             var algorithm = new QCAlgorithm();
 
             var marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
             var symbolPropertiesDatabase = SymbolPropertiesDatabase.FromDataFolder();
-
+            var dataPermissionManager = new DataPermissionManager();
             var dataManager = new DataManager(
                 new MockDataFeed(),
                 new UniverseSelection(
@@ -98,17 +142,25 @@ namespace QuantConnect.Tests.Algorithm
                         algorithm.Portfolio.CashBook,
                         marketHoursDatabase,
                         symbolPropertiesDatabase,
-                        algorithm)),
+                        algorithm,
+                        RegisteredSecurityDataTypesProvider.Null,
+                        new SecurityCacheProvider(algorithm.Portfolio)),
+                    dataPermissionManager,
+                    new DefaultDataProvider()),
                 algorithm,
                 algorithm.TimeKeeper,
                 marketHoursDatabase,
-                false);
+                false,
+                RegisteredSecurityDataTypesProvider.Null,
+                dataPermissionManager);
 
             var securityService = new SecurityService(
                 algorithm.Portfolio.CashBook,
                 marketHoursDatabase,
                 symbolPropertiesDatabase,
-                algorithm);
+                algorithm,
+                RegisteredSecurityDataTypesProvider.Null,
+                new SecurityCacheProvider(algorithm.Portfolio));
 
             algorithm.SubscriptionManager.SetDataManager(dataManager);
             algorithm.Securities.SetSecurityService(securityService);

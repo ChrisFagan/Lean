@@ -95,6 +95,14 @@ namespace QuantConnect.Statistics
         public decimal SharpeRatio { get; set; }
 
         /// <summary>
+        /// Probabilistic Sharpe Ratio is a probability measure associated with the Sharpe ratio.
+        /// It informs us of the probability that the estimated Sharpe ratio is greater than a chosen benchmark
+        /// </summary>
+        /// <remarks>See https://www.quantconnect.com/forum/discussion/6483/probabilistic-sharpe-ratio/p1</remarks>
+        [JsonConverter(typeof(JsonRoundingConverter))]
+        public decimal ProbabilisticSharpeRatio { get; set; }
+
+        /// <summary>
         /// Algorithm "Alpha" statistic - abnormal returns over the risk free rate and the relationshio (beta) with the benchmark returns.
         /// </summary>
         [JsonConverter(typeof(JsonRoundingConverter))]
@@ -156,7 +164,13 @@ namespace QuantConnect.Statistics
             decimal startingCapital,
             int tradingDaysPerYear = 252)
         {
-            if (startingCapital == 0) return;
+            if (startingCapital == 0
+                // minimum amount of samples to calculate variance
+                || listBenchmark.Count < 2
+                || listPerformance.Count < 2)
+            {
+                return;
+            }
 
             var runningCapital = startingCapital;
             var totalProfit = 0m;
@@ -195,29 +209,31 @@ namespace QuantConnect.Statistics
             }
 
             var fractionOfYears = (decimal) (equity.Keys.LastOrDefault() - equity.Keys.FirstOrDefault()).TotalDays / 365;
-            CompoundingAnnualReturn = CompoundingAnnualPerformance(startingCapital, equity.Values.LastOrDefault(), fractionOfYears);
+            CompoundingAnnualReturn = Statistics.CompoundingAnnualPerformance(startingCapital, equity.Values.LastOrDefault(), fractionOfYears);
 
             Drawdown = DrawdownPercent(equity, 3);
 
             AnnualVariance = GetAnnualVariance(listPerformance, tradingDaysPerYear);
             AnnualStandardDeviation = (decimal) Math.Sqrt((double) AnnualVariance);
 
+            var benchmarkAnnualPerformance = GetAnnualPerformance(listBenchmark, tradingDaysPerYear);
             var annualPerformance = GetAnnualPerformance(listPerformance, tradingDaysPerYear);
             SharpeRatio = AnnualStandardDeviation == 0 ? 0 : (annualPerformance - RiskFreeRate) / AnnualStandardDeviation;
 
             var benchmarkVariance = listBenchmark.Variance();
             Beta = benchmarkVariance.IsNaNOrZero() ? 0 : (decimal) (listPerformance.Covariance(listBenchmark) / benchmarkVariance);
 
-            Alpha = Beta == 0 ? 0 : annualPerformance - (RiskFreeRate + Beta * (GetAnnualPerformance(listBenchmark, tradingDaysPerYear) - RiskFreeRate));
+            Alpha = Beta == 0 ? 0 : annualPerformance - (RiskFreeRate + Beta * (benchmarkAnnualPerformance - RiskFreeRate));
 
-            var correlation = Correlation.Pearson(listPerformance, listBenchmark);
-            var benchmarkAnnualVariance = benchmarkVariance * tradingDaysPerYear;
-            TrackingError = correlation.IsNaNOrZero() || benchmarkAnnualVariance.IsNaNOrZero() ? 0 :
-                (decimal)Math.Sqrt((double)AnnualVariance - 2 * correlation * (double)AnnualStandardDeviation * Math.Sqrt(benchmarkAnnualVariance) + benchmarkAnnualVariance);
+            TrackingError = (decimal)Statistics.TrackingError(listPerformance, listBenchmark, (double)tradingDaysPerYear);
 
-            InformationRatio = TrackingError == 0 ? 0 : (annualPerformance - GetAnnualPerformance(listBenchmark, tradingDaysPerYear)) / TrackingError;
+            InformationRatio = TrackingError == 0 ? 0 : (annualPerformance - benchmarkAnnualPerformance) / TrackingError;
 
             TreynorRatio = Beta == 0 ? 0 : (annualPerformance - RiskFreeRate) / Beta;
+
+            // deannualize a 1 sharpe ratio
+            var benchmarkSharpeRatio = 1.0d / Math.Sqrt(252);
+            ProbabilisticSharpeRatio = Statistics.ProbabilisticSharpeRatio(listPerformance, benchmarkSharpeRatio).SafeDecimalCast();
         }
 
         /// <summary>
@@ -228,15 +244,11 @@ namespace QuantConnect.Statistics
         }
 
         /// <summary>
-        /// Annual compounded returns statistic based on the final-starting capital and years.
+        /// Gets the current defined risk free annual return rate
         /// </summary>
-        /// <param name="startingCapital">Algorithm starting capital</param>
-        /// <param name="finalCapital">Algorithm final capital</param>
-        /// <param name="years">Years trading</param>
-        /// <returns>Decimal fraction for annual compounding performance</returns>
-        private static decimal CompoundingAnnualPerformance(decimal startingCapital, decimal finalCapital, decimal years)
+        public static decimal GetRiskFreeRate()
         {
-            return (years == 0 ? 0d : Math.Pow((double)finalCapital / (double)startingCapital, 1 / (double)years) - 1).SafeDecimalCast();
+            return RiskFreeRate;
         }
 
         /// <summary>
@@ -266,11 +278,11 @@ namespace QuantConnect.Statistics
         /// </summary>
         /// <param name="performance">Dictionary collection of double performance values</param>
         /// <param name="tradingDaysPerYear">Trading days per year for the assets in portfolio</param>
-        /// <remarks>May be unaccurate for forex algorithms with more trading days in a year</remarks>
+        /// <remarks>May be inaccurate for forex algorithms with more trading days in a year</remarks>
         /// <returns>Double annual performance percentage</returns>
         private static decimal GetAnnualPerformance(List<double> performance, int tradingDaysPerYear = 252)
         {
-            return (decimal)performance.Average() * tradingDaysPerYear;
+            return Statistics.AnnualPerformance(performance, tradingDaysPerYear).SafeDecimalCast();
         }
 
         /// <summary>
@@ -284,7 +296,6 @@ namespace QuantConnect.Statistics
         {
             var variance = performance.Variance();
             return variance.IsNaNOrZero() ? 0 : (decimal)variance * tradingDaysPerYear;
-        }
-
+        }        
     }
 }

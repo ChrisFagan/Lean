@@ -14,6 +14,8 @@
 */
 
 using System;
+using System.Collections.Generic;
+using QuantConnect.Data;
 using QuantConnect.Securities;
 
 namespace QuantConnect.Benchmarks
@@ -23,15 +25,17 @@ namespace QuantConnect.Benchmarks
     /// </summary>
     public class SecurityBenchmark : IBenchmark
     {
-        private readonly Security _security;
+        /// <summary>
+        /// The benchmark security
+        /// </summary>
+        public Security Security { get; }
 
         /// <summary>
         /// Initializes a new instance of the <see cref="SecurityBenchmark"/> class
         /// </summary>
-        /// <param name="security">The security to use as the benchmark</param>
         public SecurityBenchmark(Security security)
         {
-            _security = security;
+            Security = security;
         }
 
         /// <summary>
@@ -42,7 +46,25 @@ namespace QuantConnect.Benchmarks
         /// in units of the account's currency.</returns>
         public decimal Evaluate(DateTime time)
         {
-            return _security.Price * _security.QuoteCurrency.ConversionRate;
+            return Security.Price * Security.QuoteCurrency.ConversionRate;
+        }
+
+        /// <summary>
+        /// Helper function that will create a security with the given SecurityManager
+        /// for a specific symbol and then create a SecurityBenchmark for it
+        /// </summary>
+        /// <param name="securities">SecurityService to create the security</param>
+        /// <param name="symbol">The symbol to create a security benchmark with</param>
+        /// <returns>The new SecurityBenchmark</returns>
+        public static SecurityBenchmark CreateInstance(SecurityManager securities, Symbol symbol)
+        {
+            // Create the security from this symbol
+            var security = securities.CreateSecurity(symbol,
+                new List<SubscriptionDataConfig>(),
+                leverage: 1,
+                addToSymbolCache: false);
+
+            return new SecurityBenchmark(security);
         }
     }
 }

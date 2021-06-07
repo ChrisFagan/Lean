@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -42,7 +42,9 @@ namespace QuantConnect.Tests.Common.Securities
                     CreateTradeBarDataConfig(SecurityType.Equity, Symbols.SPY),
                     new Cash(Currencies.USD, 0, 1m),
                     SymbolProperties.GetDefault(Currencies.USD),
-                    ErrorCurrencyConverter.Instance
+                    ErrorCurrencyConverter.Instance,
+                    RegisteredSecurityDataTypesProvider.Null,
+                    new SecurityCache()
                 )
             );
             securities[Symbols.SPY].SetMarketPrice(new TradeBar { Time = securities.UtcTime, Symbol = Symbols.SPY, Close = 195 });
@@ -55,7 +57,8 @@ namespace QuantConnect.Tests.Common.Securities
                     CreateTradeBarDataConfig(SecurityType.Option, option1),
                     new Cash(Currencies.USD, 0, 1m),
                     new OptionSymbolProperties(SymbolProperties.GetDefault(Currencies.USD)),
-                    ErrorCurrencyConverter.Instance
+                    ErrorCurrencyConverter.Instance,
+                    RegisteredSecurityDataTypesProvider.Null
                 )
             );
 
@@ -67,11 +70,12 @@ namespace QuantConnect.Tests.Common.Securities
                     CreateTradeBarDataConfig(SecurityType.Option, option2),
                     new Cash(Currencies.USD, 0, 1m),
                     new OptionSymbolProperties(SymbolProperties.GetDefault(Currencies.USD)),
-                    ErrorCurrencyConverter.Instance
+                    ErrorCurrencyConverter.Instance,
+                    RegisteredSecurityDataTypesProvider.Null
                 )
             );
 
-            var future1= Symbol.CreateFuture("ES", Market.USA, new DateTime(2016, 02, 16));
+            var future1= Symbol.CreateFuture(QuantConnect.Securities.Futures.Indices.SP500EMini, Market.CME, new DateTime(2016, 02, 16));
             securities.Add(
                 future1,
                 new Future(
@@ -79,11 +83,12 @@ namespace QuantConnect.Tests.Common.Securities
                     CreateTradeBarDataConfig(SecurityType.Future, future1),
                     new Cash(Currencies.USD, 0, 1m),
                     new OptionSymbolProperties(SymbolProperties.GetDefault(Currencies.USD)),
-                    ErrorCurrencyConverter.Instance
+                    ErrorCurrencyConverter.Instance,
+                    RegisteredSecurityDataTypesProvider.Null
                 )
             );
 
-            var future2 = Symbol.CreateFuture("ES", Market.USA, new DateTime(2016, 02, 19));
+            var future2 = Symbol.CreateFuture(QuantConnect.Securities.Futures.Indices.SP500EMini, Market.CME, new DateTime(2016, 02, 19));
             securities.Add(
                 future2,
                 new Future(
@@ -91,7 +96,8 @@ namespace QuantConnect.Tests.Common.Securities
                     CreateTradeBarDataConfig(SecurityType.Future, future2),
                     new Cash(Currencies.USD, 0, 1m),
                     new OptionSymbolProperties(SymbolProperties.GetDefault(Currencies.USD)),
-                    ErrorCurrencyConverter.Instance
+                    ErrorCurrencyConverter.Instance,
+                    RegisteredSecurityDataTypesProvider.Null
                 )
             );
 
@@ -120,6 +126,17 @@ namespace QuantConnect.Tests.Common.Securities
             Assert.AreEqual(9, weekends);
 
             Assert.AreEqual(24 + 9, (new DateTime(2016, 03, 19) - new DateTime(2016, 02, 16)).TotalDays + 1 /*inclusive*/);
+        }
+
+        [Test]
+        public void ReversedDateRequestThrows()
+        {
+            var securities = new SecurityManager(TimeKeeper);
+            var marketHoursDatabase = MarketHoursDatabase.FromDataFolder();
+            var calendar = new TradingCalendar(securities, marketHoursDatabase);
+
+            Assert.Throws<ArgumentException>(() =>
+                calendar.GetTradingDays(new DateTime(2010, 2, 28), new DateTime(2010, 2, 10)).ToList());
         }
 
         private SubscriptionDataConfig CreateTradeBarDataConfig(SecurityType type, Symbol symbol)

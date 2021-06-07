@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -16,7 +16,6 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Globalization;
 using System.Linq;
 using Python.Runtime;
 using QuantConnect.Data.Market;
@@ -24,6 +23,8 @@ using QuantConnect.Interfaces;
 using QuantConnect.Logging;
 using QuantConnect.Orders;
 using QuantConnect.Python;
+using QuantConnect.Securities.Positions;
+using static QuantConnect.StringExtensions;
 
 namespace QuantConnect.Securities
 {
@@ -31,10 +32,14 @@ namespace QuantConnect.Securities
     /// Portfolio manager class groups popular properties and makes them accessible through one interface.
     /// It also provide indexing by the vehicle symbol to get the Security.Holding objects.
     /// </summary>
-    public class SecurityPortfolioManager : IDictionary<Symbol, SecurityHolding>, ISecurityProvider
+    public class SecurityPortfolioManager : ExtendedDictionary<SecurityHolding>, IDictionary<Symbol, SecurityHolding>, ISecurityProvider
     {
-        // flips to true when the user called SetCash(), if true, SetAccountCurrency will throw
+        private Cash _baseCurrencyCash;
         private bool _setCashWasCalled;
+        private decimal _totalPortfolioValue;
+        private bool _isTotalPortfolioValueValid;
+        private bool _setAccountCurrencyWasCalled;
+        private readonly object _unsettledCashAmountsLocker = new object();
 
         /// <summary>
         /// Local access to the securities collection for the portfolio summation.
@@ -47,26 +52,29 @@ namespace QuantConnect.Securities
         public SecurityTransactionManager Transactions;
 
         /// <summary>
+        /// Local access to the position manager
+        /// </summary>
+        internal PositionManager Positions;
+
+        /// <summary>
+        /// Current read only position groups collection
+        /// </summary>
+        public PositionGroupCollection PositionGroups => Positions.Groups;
+
+        /// <summary>
         /// Gets the cash book that keeps track of all currency holdings (only settled cash)
         /// </summary>
-        public CashBook CashBook { get; private set; }
+        public CashBook CashBook { get; }
 
         /// <summary>
         /// Gets the cash book that keeps track of all currency holdings (only unsettled cash)
         /// </summary>
-        public CashBook UnsettledCashBook { get; private set; }
+        public CashBook UnsettledCashBook { get; }
 
         /// <summary>
         /// The list of pending funds waiting for settlement time
         /// </summary>
         private readonly List<UnsettledCashAmount> _unsettledCashAmounts;
-
-        // The _unsettledCashAmounts list has to be synchronized because order fills are happening on a separate thread
-        private readonly object _unsettledCashAmountsLocker = new object();
-
-        // Record keeping variables
-        private Cash _baseCurrencyCash;
-        private Cash _baseCurrencyUnsettledCash;
 
         /// <summary>
         /// Initialise security portfolio manager.
@@ -75,6 +83,7 @@ namespace QuantConnect.Securities
         {
             Securities = securityManager;
             Transactions = transactions;
+            Positions = new PositionManager(securityManager);
             MarginCallModel = new DefaultMarginCallModel(this, defaultOrderProperties);
 
             CashBook = new CashBook();
@@ -82,10 +91,12 @@ namespace QuantConnect.Securities
             _unsettledCashAmounts = new List<UnsettledCashAmount>();
 
             _baseCurrencyCash = CashBook[CashBook.AccountCurrency];
-            _baseCurrencyUnsettledCash = UnsettledCashBook[CashBook.AccountCurrency];
 
             // default to $100,000.00
             _baseCurrencyCash.SetAmount(100000);
+
+            CashBook.Updated += (sender, args) => InvalidateTotalPortfolioValue();
+            UnsettledCashBook.Updated += (sender, args) => InvalidateTotalPortfolioValue();
         }
 
         #region IDictionary Implementation
@@ -112,7 +123,7 @@ namespace QuantConnect.Securities
         /// </summary>
         /// <exception cref="NotImplementedException">Portfolio object is an adaptor for Security Manager. This method is not applicable for PortfolioManager class.</exception>
         /// <remarks>This method is not implemented and using it will throw an exception</remarks>
-        public void Clear() { throw new NotImplementedException("Portfolio object is an adaptor for Security Manager and cannot be cleared."); }
+        public override void Clear() { throw new NotImplementedException("Portfolio object is an adaptor for Security Manager and cannot be cleared."); }
 
         /// <summary>
         /// Remove this keyvalue pair from the portfolio.
@@ -128,7 +139,7 @@ namespace QuantConnect.Securities
         /// <exception cref="NotImplementedException">Portfolio object is an adaptor for Security Manager. This method is not applicable for PortfolioManager class.</exception>
         /// <param name="symbol">Symbol of dictionary</param>
         /// <remarks>This method is not implemented and using it will throw an exception</remarks>
-        public bool Remove(Symbol symbol) { throw new NotImplementedException("Portfolio object is an adaptor for Security Manager and objects cannot be removed."); }
+        public override bool Remove(Symbol symbol) { throw new NotImplementedException("Portfolio object is an adaptor for Security Manager and objects cannot be removed."); }
 
         /// <summary>
         /// Check if the portfolio contains this symbol string.
@@ -167,7 +178,7 @@ namespace QuantConnect.Securities
         /// Check if the underlying securities array is read only.
         /// </summary>
         /// <remarks>IDictionary implementation calling the underlying Securities collection</remarks>
-        public bool IsReadOnly
+        public override bool IsReadOnly
         {
             get
             {
@@ -194,6 +205,22 @@ namespace QuantConnect.Securities
                 i++;
             }
         }
+
+        /// <summary>
+        /// Gets an <see cref="T:System.Collections.Generic.ICollection`1"/> containing the Symbol objects of the <see cref="T:System.Collections.Generic.IDictionary`2"/>.
+        /// </summary>
+        /// <returns>
+        /// An <see cref="T:System.Collections.Generic.ICollection`1"/> containing the Symbol objects of the object that implements <see cref="T:System.Collections.Generic.IDictionary`2"/>.
+        /// </returns>
+        protected override IEnumerable<Symbol> GetKeys => Securities.Select(pair => pair.Key);
+
+        /// <summary>
+        /// Gets an <see cref="T:System.Collections.Generic.ICollection`1"/> containing the values in the <see cref="T:System.Collections.Generic.IDictionary`2"/>.
+        /// </summary>
+        /// <returns>
+        /// An <see cref="T:System.Collections.Generic.ICollection`1"/> containing the values in the object that implements <see cref="T:System.Collections.Generic.IDictionary`2"/>.
+        /// </returns>
+        protected override IEnumerable<SecurityHolding> GetValues => Securities.Select(pair => pair.Value.Holdings);
 
         /// <summary>
         /// Symbol keys collection of the underlying assets in the portfolio.
@@ -227,7 +254,7 @@ namespace QuantConnect.Securities
         /// <param name="holding">Holdings object of this security</param>
         /// <remarks>IDictionary implementation</remarks>
         /// <returns>Boolean true if successful locating and setting the holdings object</returns>
-        public bool TryGetValue(Symbol symbol, out SecurityHolding holding)
+        public override bool TryGetValue(Symbol symbol, out SecurityHolding holding)
         {
             Security security;
             var success = Securities.TryGetValue(symbol, out security);
@@ -324,17 +351,24 @@ namespace QuantConnect.Securities
         /// <seealso cref="Invested"/>
         public bool HoldStock
         {
-            get { return TotalHoldingsValue > 0; }
+            get
+            {
+                foreach (var security in Securities.Values)
+                {
+                    if (security.HoldStock)
+                    {
+                        return true;
+                    }
+                }
+                return false;
+            }
         }
 
         /// <summary>
         /// Alias for HoldStock. Check if we have and holdings.
         /// </summary>
         /// <seealso cref="HoldStock"/>
-        public bool Invested
-        {
-            get { return HoldStock; }
-        }
+        public bool Invested => HoldStock;
 
         /// <summary>
         /// Get the total unrealised profit in our portfolio from the individual security unrealized profits.
@@ -368,28 +402,51 @@ namespace QuantConnect.Securities
         {
             get
             {
-                // we can't include forex in this calculation since we would be double accounting with respect to the cash book
-                // we also exclude futures and CFD as they are calculated separately
-                decimal totalHoldingsValueWithoutForexCryptoFutureCfd = 0;
-                foreach (var kvp in Securities)
+                if (!_isTotalPortfolioValueValid)
                 {
-                    var position = kvp.Value;
-                    if (position.Type != SecurityType.Forex && position.Type != SecurityType.Crypto &&
-                        position.Type != SecurityType.Future && position.Type != SecurityType.Cfd)
+                    decimal totalHoldingsValueWithoutForexCryptoFutureCfd = 0;
+                    decimal totalFuturesAndCfdHoldingsValue = 0;
+                    foreach (var kvp in Securities.Where((pair, i) => pair.Value.Holdings.Quantity != 0))
                     {
-                        totalHoldingsValueWithoutForexCryptoFutureCfd += position.Holdings.HoldingsValue;
+                        var position = kvp.Value;
+                        var securityType = position.Type;
+                        // We can't include forex in this calculation since we would be double accounting with respect to the cash book
+                        // We also exclude futures and CFD as they are calculated separately because they do not impact the account's cash.
+                        // We include futures options as part of this calculation because IB chooses to change our account's cash balance
+                        // when we buy or sell a futures options contract.
+                        if (securityType != SecurityType.Forex && securityType != SecurityType.Crypto &&
+                            securityType != SecurityType.Future && securityType != SecurityType.Cfd)
+                        {
+                            totalHoldingsValueWithoutForexCryptoFutureCfd += position.Holdings.HoldingsValue;
+                        }
+
+                        // Futures and CFDs don't impact account cash, so they must be calculated
+                        // by applying the unrealized P&L to the cash balance.
+                        if (securityType == SecurityType.Future || securityType == SecurityType.Cfd)
+                        {
+                            totalFuturesAndCfdHoldingsValue += position.Holdings.UnrealizedProfit;
+                        }
                     }
-                }
 
-                var totalFuturesAndCfdHoldingsValue = Securities
-                    .Where(x => x.Value.Type == SecurityType.Future || x.Value.Type == SecurityType.Cfd)
-                    .Aggregate(0m, (d, pair) => d + pair.Value.Holdings.UnrealizedProfit);
-
-                return CashBook.TotalValueInAccountCurrency +
+                    _totalPortfolioValue = CashBook.TotalValueInAccountCurrency +
                        UnsettledCashBook.TotalValueInAccountCurrency +
                        totalHoldingsValueWithoutForexCryptoFutureCfd +
                        totalFuturesAndCfdHoldingsValue;
+
+                    _isTotalPortfolioValueValid = true;
+                }
+
+                return _totalPortfolioValue;
             }
+        }
+
+        /// <summary>
+        /// Will flag the current <see cref="TotalPortfolioValue"/> as invalid
+        /// so it is recalculated when gotten
+        /// </summary>
+        public void InvalidateTotalPortfolioValue()
+        {
+            _isTotalPortfolioValueValid = false;
         }
 
         /// <summary>
@@ -436,13 +493,11 @@ namespace QuantConnect.Securities
             get
             {
                 decimal sum = 0;
-                foreach (var kvp in Securities)
+                foreach (var group in Positions.Groups)
                 {
-                    var security = kvp.Value;
-                    var context = new ReservedBuyingPowerForPositionParameters(security);
-                    var reservedBuyingPower = security.BuyingPowerModel.GetReservedBuyingPowerForPosition(context);
-                    sum += reservedBuyingPower.Value;
+                    sum += group.BuyingPowerModel.GetReservedBuyingPowerForPositionGroup(this, group);
                 }
+
                 return sum;
             }
         }
@@ -477,21 +532,10 @@ namespace QuantConnect.Securities
         /// </summary>
         /// <param name="symbol">Symbol object indexer</param>
         /// <returns>SecurityHolding class from the algorithm securities</returns>
-        public SecurityHolding this[Symbol symbol]
+        public override SecurityHolding this[Symbol symbol]
         {
             get { return Securities[symbol].Holdings; }
             set { Securities[symbol].Holdings = value; }
-        }
-
-        /// <summary>
-        /// Indexer for the PortfolioManager class to access the underlying security holdings objects.
-        /// </summary>
-        /// <param name="ticker">string ticker symbol indexer</param>
-        /// <returns>SecurityHolding class from the algorithm securities</returns>
-        public SecurityHolding this[string ticker]
-        {
-            get { return Securities[ticker].Holdings; }
-            set { Securities[ticker].Holdings = value; }
         }
 
         /// <summary>
@@ -502,6 +546,22 @@ namespace QuantConnect.Securities
         /// <param name="accountCurrency">The account currency cash symbol to set</param>
         public void SetAccountCurrency(string accountCurrency)
         {
+            accountCurrency = accountCurrency.LazyToUpper();
+
+            // only allow setting account currency once
+            // we could try to set it twice when backtesting and the job packet specifies the initial CashAmount to use
+            if (_setAccountCurrencyWasCalled)
+            {
+                if (accountCurrency != CashBook.AccountCurrency)
+                {
+                    Log.Trace("SecurityPortfolioManager.SetAccountCurrency():" +
+                        $" account currency has already been set to {CashBook.AccountCurrency}." +
+                        $" Will ignore new value {accountCurrency}");
+                }
+                return;
+            }
+            _setAccountCurrencyWasCalled = true;
+
             if (Securities.Count > 0)
             {
                 throw new InvalidOperationException("SecurityPortfolioManager.SetAccountCurrency(): " +
@@ -515,7 +575,6 @@ namespace QuantConnect.Securities
                     "Cannot change AccountCurrency after setting cash. " +
                     "Please move SetAccountCurrency() before SetCash().");
             }
-            accountCurrency = accountCurrency.ToUpper();
 
             Log.Trace("SecurityPortfolioManager.SetAccountCurrency():" +
                 $" setting account currency to {accountCurrency}");
@@ -524,7 +583,6 @@ namespace QuantConnect.Securities
             CashBook.AccountCurrency = accountCurrency;
 
             _baseCurrencyCash = CashBook[accountCurrency];
-            _baseCurrencyUnsettledCash = UnsettledCashBook[accountCurrency];
         }
 
         /// <summary>
@@ -567,13 +625,15 @@ namespace QuantConnect.Securities
         public decimal GetMarginRemaining(Symbol symbol, OrderDirection direction = OrderDirection.Buy)
         {
             var security = Securities[symbol];
-            var context = new BuyingPowerParameters(this, security, direction);
-            return security.BuyingPowerModel.GetBuyingPower(context).Value;
+
+            var positionGroup = Positions.GetOrCreateDefaultGroup(security);
+            var parameters = new PositionGroupBuyingPowerParameters(this, positionGroup, direction);
+            return positionGroup.BuyingPowerModel.GetPositionGroupBuyingPower(parameters);
         }
 
         /// <summary>
         /// Gets the margin available for trading a specific symbol in a specific direction.
-        /// Alias for <see cref="GetMarginRemaining"/>
+        /// Alias for <see cref="GetMarginRemaining(Symbol, OrderDirection)"/>
         /// </summary>
         /// <param name="symbol">The symbol to compute margin remaining for</param>
         /// <param name="direction">The order/trading direction</param>
@@ -595,6 +655,7 @@ namespace QuantConnect.Securities
         {
             var security = Securities[fill.Symbol];
             security.PortfolioModel.ProcessFill(this, security, fill);
+            InvalidateTotalPortfolioValue();
         }
 
         /// <summary>
@@ -688,6 +749,8 @@ namespace QuantConnect.Securities
             }
 
             security.SetMarketPrice(next);
+            // security price updated
+            InvalidateTotalPortfolioValue();
         }
 
         /// <summary>
@@ -760,8 +823,9 @@ namespace QuantConnect.Securities
         public void LogMarginInformation(OrderRequest orderRequest = null)
         {
             Log.Trace("Total margin information: " +
-                      $"TotalMarginUsed: {TotalMarginUsed.ToString("F2", CultureInfo.InvariantCulture)}, " +
-                      $"MarginRemaining: {MarginRemaining.ToString("F2", CultureInfo.InvariantCulture)}");
+                  Invariant($"TotalMarginUsed: {TotalMarginUsed:F2}, ") +
+                  Invariant($"MarginRemaining: {MarginRemaining:F2}")
+              );
 
             var orderSubmitRequest = orderRequest as SubmitOrderRequest;
             if (orderSubmitRequest != null)
@@ -769,17 +833,19 @@ namespace QuantConnect.Securities
                 var direction = orderSubmitRequest.Quantity > 0 ? OrderDirection.Buy : OrderDirection.Sell;
                 var security = Securities[orderSubmitRequest.Symbol];
 
-                var marginUsed = security.BuyingPowerModel.GetReservedBuyingPowerForPosition(
-                    new ReservedBuyingPowerForPositionParameters(security)
+                var positionGroup = Positions.GetOrCreateDefaultGroup(security);
+                var marginUsed = positionGroup.BuyingPowerModel.GetReservedBuyingPowerForPositionGroup(
+                    this, positionGroup
                 );
 
-                var marginRemaining = security.BuyingPowerModel.GetBuyingPower(
-                    new BuyingPowerParameters(this, security, direction)
+                var marginRemaining = positionGroup.BuyingPowerModel.GetPositionGroupBuyingPower(
+                    this, positionGroup, direction
                 );
 
                 Log.Trace("Order request margin information: " +
-                          $"MarginUsed: {marginUsed.Value.ToString("F2", CultureInfo.InvariantCulture)}, " +
-                          $"MarginRemaining: {marginRemaining.Value.ToString("F2", CultureInfo.InvariantCulture)}");
+                    Invariant($"MarginUsed: {marginUsed:F2}, ") +
+                    Invariant($"MarginRemaining: {marginRemaining.Value:F2}")
+                );
             }
         }
 

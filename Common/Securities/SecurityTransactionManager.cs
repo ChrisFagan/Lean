@@ -20,6 +20,7 @@ using System.Threading;
 using QuantConnect.Interfaces;
 using QuantConnect.Logging;
 using QuantConnect.Orders;
+using static QuantConnect.StringExtensions;
 
 namespace QuantConnect.Securities
 {
@@ -185,7 +186,7 @@ namespace QuantConnect.Securities
         {
             if (_algorithm != null && _algorithm.IsWarmingUp)
             {
-                throw new Exception("This operation is not allowed in Initialize or during warm up: CancelOpenOrders. Please move this code to the OnWarmupFinished() method.");
+                throw new InvalidOperationException("This operation is not allowed in Initialize or during warm up: CancelOpenOrders. Please move this code to the OnWarmupFinished() method.");
             }
 
             var cancelledOrders = new List<OrderTicket>();
@@ -207,7 +208,7 @@ namespace QuantConnect.Securities
         {
             if (_algorithm != null && _algorithm.IsWarmingUp)
             {
-                throw new Exception("This operation is not allowed in Initialize or during warm up: CancelOpenOrders. Please move this code to the OnWarmupFinished() method.");
+                throw new InvalidOperationException("This operation is not allowed in Initialize or during warm up: CancelOpenOrders. Please move this code to the OnWarmupFinished() method.");
             }
 
             var cancelledOrders = new List<OrderTicket>();
@@ -230,7 +231,7 @@ namespace QuantConnect.Securities
         }
 
         /// <summary>
-        /// Gets and enumerable of <see cref="OrderTicket"/> matching the specified <paramref name="filter"/>
+        /// Gets an enumerable of <see cref="OrderTicket"/> matching the specified <paramref name="filter"/>
         /// </summary>
         /// <param name="filter">The filter predicate used to find the required order tickets</param>
         /// <returns>An enumerable of <see cref="OrderTicket"/> matching the specified <paramref name="filter"/></returns>
@@ -240,13 +241,44 @@ namespace QuantConnect.Securities
         }
 
         /// <summary>
-        /// Gets and enumerable of opened <see cref="OrderTicket"/> matching the specified <paramref name="filter"/>
+        /// Get an enumerable of open <see cref="OrderTicket"/> for the specified symbol
+        /// </summary>
+        /// <param name="symbol">The symbol for which to return the order tickets</param>
+        /// <returns>An enumerable of open <see cref="OrderTicket"/>.</returns>
+        public IEnumerable<OrderTicket> GetOpenOrderTickets(Symbol symbol)
+        {
+            return GetOpenOrderTickets(x => x.Symbol == symbol);
+        }
+
+        /// <summary>
+        /// Gets an enumerable of opened <see cref="OrderTicket"/> matching the specified <paramref name="filter"/>
         /// </summary>
         /// <param name="filter">The filter predicate used to find the required order tickets</param>
         /// <returns>An enumerable of opened <see cref="OrderTicket"/> matching the specified <paramref name="filter"/></returns>
         public IEnumerable<OrderTicket> GetOpenOrderTickets(Func<OrderTicket, bool> filter = null)
         {
             return _orderProcessor.GetOpenOrderTickets(filter ?? (x => true));
+        }
+
+        /// <summary>
+        /// Gets the remaining quantity to be filled from open orders, i.e. order size minus quantity filled
+        /// </summary>
+        /// <param name="filter">Filters the order tickets to be included in the aggregate quantity remaining to be filled</param>
+        /// <returns>Total quantity that hasn't been filled yet for all orders that were not filtered</returns>
+        public decimal GetOpenOrdersRemainingQuantity(Func<OrderTicket, bool> filter = null)
+        {
+            return GetOpenOrderTickets(filter)
+                .Aggregate(0m, (d, t) => d + t.Quantity - t.QuantityFilled);
+        }
+
+        /// <summary>
+        /// Gets the remaining quantity to be filled from open orders for a Symbol, i.e. order size minus quantity filled
+        /// </summary>
+        /// <param name="symbol">Symbol to get the remaining quantity of currently open orders</param>
+        /// <returns>Total quantity that hasn't been filled yet for orders matching the Symbol</returns>
+        public decimal GetOpenOrdersRemainingQuantity(Symbol symbol)
+        {
+            return GetOpenOrdersRemainingQuantity(t => t.Symbol == symbol);
         }
 
         /// <summary>
@@ -271,13 +303,19 @@ namespace QuantConnect.Securities
             var orderTicket = GetOrderTicket(orderId);
             if (orderTicket == null)
             {
-                Log.Error("SecurityTransactionManager.WaitForOrder(): Unable to locate ticket for order: " + orderId);
+                Log.Error(Invariant(
+                    $"SecurityTransactionManager.WaitForOrder(): Unable to locate ticket for order: {orderId}"
+                ));
+
                 return false;
             }
 
             if (!orderTicket.OrderClosed.WaitOne(_marketOrderFillTimeout))
             {
-                Log.Error("SecurityTransactionManager.WaitForOrder(): Order did not fill within {0} seconds.", _marketOrderFillTimeout.TotalSeconds);
+                Log.Error(Invariant(
+                    $"SecurityTransactionManager.WaitForOrder(): Order did not fill within {_marketOrderFillTimeout.TotalSeconds} seconds."
+                ));
+
                 return false;
             }
 
@@ -291,7 +329,7 @@ namespace QuantConnect.Securities
         /// <returns>List of open orders.</returns>
         public List<Order> GetOpenOrders(Symbol symbol)
         {
-            return GetOpenOrders(x => x.Symbol == symbol).ToList();
+            return GetOpenOrders(x => x.Symbol == symbol);
         }
 
         /// <summary>
@@ -318,7 +356,7 @@ namespace QuantConnect.Securities
         /// Get the order by its id
         /// </summary>
         /// <param name="orderId">Order id to fetch</param>
-        /// <returns>The order with the specified id, or null if no match is found</returns>
+        /// <returns>A clone of the order with the specified id, or null if no match is found</returns>
         public Order GetOrderById(int orderId)
         {
             return _orderProcessor.GetOrderById(orderId);
@@ -362,7 +400,6 @@ namespace QuantConnect.Securities
         {
             _orderProcessor = orderProvider;
         }
-
 
         /// <summary>
         /// Record the transaction value and time in a list to later be processed for statistics creation.

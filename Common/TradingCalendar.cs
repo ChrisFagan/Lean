@@ -1,10 +1,24 @@
-﻿using System;
+/*
+ * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
+ * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+*/
+
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using QuantConnect.Securities;
 using QLNet;
+using QuantConnect.Logging;
 
 namespace QuantConnect
 {
@@ -16,6 +30,11 @@ namespace QuantConnect
         private readonly MarketHoursDatabase _marketHoursDatabase;
         private readonly SecurityManager _securityManager;
 
+        /// <summary>
+        /// Initialize a new <see cref="TradingCalendar"/> instance.
+        /// </summary>
+        /// <param name="securityManager">SecurityManager for this calendar</param>
+        /// <param name="marketHoursDatabase">MarketHoursDatabase for this calendar</param>
         public TradingCalendar(SecurityManager securityManager, MarketHoursDatabase marketHoursDatabase)
         {
             _securityManager = securityManager;
@@ -104,10 +123,18 @@ namespace QuantConnect
             }
 
             var qlCalendar = new UnitedStates();
-            var options = symbols.Where(x => x.ID.SecurityType == SecurityType.Option).ToList();
+            var options = symbols.Where(x => x.ID.SecurityType.IsOption()).ToList();
             var futures = symbols.Where(x => x.ID.SecurityType == SecurityType.Future).ToList();
 
-            foreach (var dayIdx in Enumerable.Range(0, (int)(end.Date.AddDays(1.0) - start.Date).TotalDays))
+            var totalDays = (int)(end.Date.AddDays(1.0) - start.Date).TotalDays;
+            if (totalDays < 0)
+            {
+                throw new ArgumentException(
+                    $"TradingCalendar.PopulateTradingDays(): Total days is negative ({totalDays}), indicating reverse start and end times." +
+                    $" Check your usage of TradingCalendar to ensure proper arrangement of variables");
+            }
+
+            foreach (var dayIdx in Enumerable.Range(0, totalDays))
             {
                 var currentDate = start.Date.AddDays(dayIdx);
 

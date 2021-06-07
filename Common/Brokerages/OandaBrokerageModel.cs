@@ -14,12 +14,13 @@
 */
 
 using System.Collections.Generic;
+using QuantConnect.Benchmarks;
 using QuantConnect.Orders;
 using QuantConnect.Orders.Fees;
-using QuantConnect.Orders.Fills;
 using QuantConnect.Orders.Slippage;
 using QuantConnect.Securities;
 using QuantConnect.Util;
+using static QuantConnect.StringExtensions;
 
 namespace QuantConnect.Brokerages
 {
@@ -74,7 +75,7 @@ namespace QuantConnect.Brokerages
             if (security.Type != SecurityType.Forex && security.Type != SecurityType.Cfd)
             {
                 message = new BrokerageMessageEvent(BrokerageMessageType.Warning, "NotSupported",
-                    $"The {nameof(OandaBrokerageModel)} does not support {security.Type} security type."
+                    Invariant($"The {nameof(OandaBrokerageModel)} does not support {security.Type} security type.")
                 );
 
                 return false;
@@ -84,7 +85,7 @@ namespace QuantConnect.Brokerages
             if (order.Type != OrderType.Limit && order.Type != OrderType.Market && order.Type != OrderType.StopMarket)
             {
                 message = new BrokerageMessageEvent(BrokerageMessageType.Warning, "NotSupported",
-                    $"The {nameof(OandaBrokerageModel)} does not support {order.Type} order type."
+                    Invariant($"The {nameof(OandaBrokerageModel)} does not support {order.Type} order type.")
                 );
 
                 return false;
@@ -94,7 +95,7 @@ namespace QuantConnect.Brokerages
             if (order.TimeInForce != TimeInForce.GoodTilCanceled)
             {
                 message = new BrokerageMessageEvent(BrokerageMessageType.Warning, "NotSupported",
-                    $"The {nameof(OandaBrokerageModel)} does not support {order.TimeInForce.GetType().Name} time in force."
+                    Invariant($"The {nameof(OandaBrokerageModel)} does not support {order.TimeInForce.GetType().Name} time in force.")
                 );
 
                 return false;
@@ -104,13 +105,14 @@ namespace QuantConnect.Brokerages
         }
 
         /// <summary>
-        /// Gets a new fill model that represents this brokerage's fill behavior
+        /// Get the benchmark for this model
         /// </summary>
-        /// <param name="security">The security to get fill model for</param>
-        /// <returns>The new fill model for this brokerage</returns>
-        public override IFillModel GetFillModel(Security security)
+        /// <param name="securities">SecurityService to create the security with if needed</param>
+        /// <returns>The benchmark for this brokerage</returns>
+        public override IBenchmark GetBenchmark(SecurityManager securities)
         {
-            return new ImmediateFillModel();
+            var symbol = Symbol.Create("EURUSD", SecurityType.Forex, Market.Oanda);
+            return SecurityBenchmark.CreateInstance(securities, symbol);
         }
 
         /// <summary>

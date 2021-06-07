@@ -38,7 +38,7 @@ namespace QuantConnect.Algorithm.CSharp
             // Set requested data resolution
             UniverseSettings.Resolution = Resolution.Daily;
 
-            SetStartDate(2014, 03, 24);
+            SetStartDate(2014, 03, 25);
             SetEndDate(2014, 04, 07);
             SetCash(100000);
 
@@ -82,38 +82,48 @@ namespace QuantConnect.Algorithm.CSharp
         /// </summary>
         public Dictionary<string, string> ExpectedStatistics => new Dictionary<string, string>
         {
-            {"Total Trades", "19"},
+            {"Total Trades", "17"},
             {"Average Win", "0.12%"},
-            {"Average Loss", "-0.03%"},
-            {"Compounding Annual Return", "-47.750%"},
-            {"Drawdown", "3.000%"},
-            {"Expectancy", "1.860"},
-            {"Net Profit", "-2.632%"},
-            {"Sharpe Ratio", "-6.155"},
-            {"Loss Rate", "43%"},
-            {"Win Rate", "57%"},
-            {"Profit-Loss Ratio", "4.01"},
-            {"Alpha", "-0.209"},
-            {"Beta", "-20.117"},
-            {"Annual Standard Deviation", "0.09"},
-            {"Annual Variance", "0.008"},
-            {"Information Ratio", "-6.337"},
-            {"Tracking Error", "0.09"},
-            {"Treynor Ratio", "0.028"},
-            {"Total Fees", "$26.42"},
-            {"Total Insights Generated", "33"},
-            {"Total Insights Closed", "30"},
-            {"Total Insights Analysis Completed", "30"},
-            {"Long Insight Count", "33"},
+            {"Average Loss", "-0.02%"},
+            {"Compounding Annual Return", "-34.957%"},
+            {"Drawdown", "2.200%"},
+            {"Expectancy", "1.477"},
+            {"Net Profit", "-1.636%"},
+            {"Sharpe Ratio", "-3.528"},
+            {"Probabilistic Sharpe Ratio", "9.517%"},
+            {"Loss Rate", "71%"},
+            {"Win Rate", "29%"},
+            {"Profit-Loss Ratio", "7.67"},
+            {"Alpha", "-0.296"},
+            {"Beta", "-0.029"},
+            {"Annual Standard Deviation", "0.082"},
+            {"Annual Variance", "0.007"},
+            {"Information Ratio", "-0.707"},
+            {"Tracking Error", "0.133"},
+            {"Treynor Ratio", "9.887"},
+            {"Total Fees", "$24.46"},
+            {"Estimated Strategy Capacity", "$8800000.00"},
+            {"Lowest Capacity Asset", "GOOCV VP83T1ZUHROL"},
+            {"Fitness Score", "0.005"},
+            {"Kelly Criterion Estimate", "-7.074"},
+            {"Kelly Criterion Probability Value", "0.699"},
+            {"Sortino Ratio", "-4.4"},
+            {"Return Over Maximum Drawdown", "-16.099"},
+            {"Portfolio Turnover", "0.1"},
+            {"Total Insights Generated", "27"},
+            {"Total Insights Closed", "25"},
+            {"Total Insights Analysis Completed", "25"},
+            {"Long Insight Count", "27"},
             {"Short Insight Count", "0"},
             {"Long/Short Ratio", "100%"},
-            {"Estimated Monthly Alpha Value", "$-10605760"},
-            {"Total Accumulated Estimated Alpha Value", "$-5361800"},
-            {"Mean Population Estimated Insight Value", "$-178726.7"},
-            {"Mean Population Direction", "36.6667%"},
+            {"Estimated Monthly Alpha Value", "$-3609656"},
+            {"Total Accumulated Estimated Alpha Value", "$-1704560"},
+            {"Mean Population Estimated Insight Value", "$-68182.39"},
+            {"Mean Population Direction", "32%"},
             {"Mean Population Magnitude", "0%"},
-            {"Rolling Averaged Population Direction", "56.6585%"},
-            {"Rolling Averaged Population Magnitude", "0%"}
+            {"Rolling Averaged Population Direction", "57.5578%"},
+            {"Rolling Averaged Population Magnitude", "0%"},
+            {"OrderListHash", "4c38206b66a42890dcaf60a294158848"}
         };
     }
 }

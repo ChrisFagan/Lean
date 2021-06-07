@@ -41,12 +41,14 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators.Factories
                 config,
                 new Cash(Currencies.USD, 0, 1),
                 SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null,
+                new SecurityCache()
             );
 
             var universeSettings = new UniverseSettings(Resolution.Daily, 2m, true, false, TimeSpan.FromDays(1));
             var securityInitializer = new BrokerageModelSecurityInitializer(new DefaultBrokerageModel(), SecuritySeeder.Null);
-            var universe = new CoarseFundamentalUniverse(universeSettings, securityInitializer, x => new List<Symbol>{ Symbols.AAPL });
+            var universe = new CoarseFundamentalUniverse(universeSettings, x => new List<Symbol>{ Symbols.AAPL });
 
             var fileProvider = new DefaultDataProvider();
 
@@ -85,26 +87,29 @@ namespace QuantConnect.Tests.Engine.DataFeeds.Enumerators.Factories
                 config,
                 new Cash(Currencies.USD, 0, 1),
                 SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null,
+                new SecurityCache()
             );
 
             var universeSettings = new UniverseSettings(Resolution.Daily, 2m, true, false, TimeSpan.FromDays(1));
             var securityInitializer = new BrokerageModelSecurityInitializer(new DefaultBrokerageModel(), SecuritySeeder.Null);
-            var universe = new CoarseFundamentalUniverse(universeSettings, securityInitializer, x => new List<Symbol> { Symbols.AAPL });
+            var universe = new CoarseFundamentalUniverse(universeSettings, x => new List<Symbol> { Symbols.AAPL });
 
             var fileProvider = new DefaultDataProvider();
 
             var factory = new BaseDataCollectionSubscriptionEnumeratorFactory();
 
-            var dateStart = new DateTime(2014, 3, 25);
-            var dateEnd = new DateTime(2014, 3, 26);
+            var dateStart = new DateTime(2014, 3, 26);
+            var dateEnd = new DateTime(2014, 3, 27);
             var days = (dateEnd - dateStart).Days + 1;
 
             var request = new SubscriptionRequest(true, universe, security, config, dateStart, dateEnd);
 
             using (var enumerator = factory.CreateEnumerator(request, fileProvider))
             {
-                for (var i = 0; i < days; i++)
+                dateStart = dateStart.AddDays(-1);
+                for (var i = 0; i <= days; i++)
                 {
                     Assert.IsTrue(enumerator.MoveNext());
 

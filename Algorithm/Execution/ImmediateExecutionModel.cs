@@ -13,9 +13,9 @@
  * limitations under the License.
 */
 
-using System.Linq;
 using QuantConnect.Algorithm.Framework.Portfolio;
 using QuantConnect.Data.UniverseSelection;
+using QuantConnect.Orders;
 
 namespace QuantConnect.Algorithm.Framework.Execution
 {
@@ -35,20 +35,21 @@ namespace QuantConnect.Algorithm.Framework.Execution
         public override void Execute(QCAlgorithm algorithm, IPortfolioTarget[] targets)
         {
             _targetsCollection.AddRange(targets);
-
-            foreach (var target in _targetsCollection.OrderByMarginImpact(algorithm))
+            // for performance we check count value, OrderByMarginImpact and ClearFulfilled are expensive to call
+            if (_targetsCollection.Count > 0)
             {
-                var existing = algorithm.Securities[target.Symbol].Holdings.Quantity
-                    + algorithm.Transactions.GetOpenOrders(target.Symbol)
-                        .Aggregate(0m, (d, order) => d + order.Quantity);
-                var quantity = target.Quantity - existing;
-                if (quantity != 0)
+                foreach (var target in _targetsCollection.OrderByMarginImpact(algorithm))
                 {
-                    algorithm.MarketOrder(target.Symbol, quantity);
+                    // calculate remaining quantity to be ordered
+                    var quantity = OrderSizing.GetUnorderedQuantity(algorithm, target);
+                    if (quantity != 0)
+                    {
+                        algorithm.MarketOrder(target.Symbol, quantity);
+                    }
                 }
-            }
 
-            _targetsCollection.ClearFulfilled(algorithm);
+                _targetsCollection.ClearFulfilled(algorithm);
+            }
         }
 
         /// <summary>

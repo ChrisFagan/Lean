@@ -52,37 +52,39 @@ namespace QuantConnect.Algorithm.Framework.Execution
             // update the complete set of portfolio targets with the new targets
             _targetsCollection.AddRange(targets);
 
-            foreach (var target in _targetsCollection.OrderByMarginImpact(algorithm))
+            // for performance we check count value, OrderByMarginImpact and ClearFulfilled are expensive to call
+            if (_targetsCollection.Count > 0)
             {
-                var symbol = target.Symbol;
-
-                // calculate remaining quantity to be ordered
-                var unorderedQuantity = OrderSizing.GetUnorderedQuantity(algorithm, target);
-
-                // fetch our symbol data containing our VWAP indicator
-                SymbolData data;
-                if (!_symbolData.TryGetValue(symbol, out data))
+                foreach (var target in _targetsCollection.OrderByMarginImpact(algorithm))
                 {
-                    continue;
-                }
+                    var symbol = target.Symbol;
 
-                // check order entry conditions
-                if (PriceIsFavorable(data, unorderedQuantity))
-                {
-                    // get the maximum order size based on a percentage of current volume
-                    var maxOrderSize = OrderSizing.PercentVolume(data.Security, MaximumOrderQuantityPercentVolume);
-                    var orderSize = Math.Min(maxOrderSize, Math.Abs(unorderedQuantity));
+                    // calculate remaining quantity to be ordered
+                    var unorderedQuantity = OrderSizing.GetUnorderedQuantity(algorithm, target);
 
-                    // round down to even lot size
-                    orderSize -= orderSize % data.Security.SymbolProperties.LotSize;
-                    if (orderSize != 0)
+                    // fetch our symbol data containing our VWAP indicator
+                    SymbolData data;
+                    if (!_symbolData.TryGetValue(symbol, out data))
                     {
-                        algorithm.MarketOrder(data.Security.Symbol, Math.Sign(unorderedQuantity) * orderSize);
+                        continue;
+                    }
+
+                    // check order entry conditions
+                    if (PriceIsFavorable(data, unorderedQuantity))
+                    {
+                        // adjust order size to respect maximum order size based on a percentage of current volume
+                        var orderSize = OrderSizing.GetOrderSizeForPercentVolume(
+                            data.Security, MaximumOrderQuantityPercentVolume, unorderedQuantity);
+
+                        if (orderSize != 0)
+                        {
+                            algorithm.MarketOrder(data.Security.Symbol, orderSize);
+                        }
                     }
                 }
-            }
 
-            _targetsCollection.ClearFulfilled(algorithm);
+                _targetsCollection.ClearFulfilled(algorithm);
+            }
         }
 
         /// <summary>
@@ -147,12 +149,29 @@ namespace QuantConnect.Algorithm.Framework.Execution
             return false;
         }
 
+        /// <summary>
+        /// Symbol data for this Execution Model
+        /// </summary>
         protected class SymbolData
         {
+            /// <summary>
+            /// Security
+            /// </summary>
             public Security Security { get; }
+
+            /// <summary>
+            /// VWAP Indicator
+            /// </summary>
             public IntradayVwap VWAP { get; }
+
+            /// <summary>
+            /// Data Consolidator
+            /// </summary>
             public IDataConsolidator Consolidator { get; }
 
+            /// <summary>
+            /// Initialize a new instance of <see cref="SymbolData"/>
+            /// </summary>
             public SymbolData(QCAlgorithm algorithm, Security security)
             {
                 Security = security;

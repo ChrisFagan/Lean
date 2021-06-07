@@ -15,11 +15,9 @@
 
 using System;
 using System.Collections.Generic;
-using QuantConnect.Orders;
+using QuantConnect.Benchmarks;
 using QuantConnect.Securities;
-using QuantConnect.Orders.Fills;
 using QuantConnect.Orders.Fees;
-using System.Linq;
 using QuantConnect.Util;
 
 namespace QuantConnect.Brokerages
@@ -39,7 +37,7 @@ namespace QuantConnect.Brokerages
         /// <summary>
         /// Initializes a new instance of the <see cref="BitfinexBrokerageModel"/> class
         /// </summary>
-        /// <param name="accountType">The type of account to be modelled, defaults to <see cref="AccountType.Margin"/></param>
+        /// <param name="accountType">The type of account to be modeled, defaults to <see cref="AccountType.Margin"/></param>
         public BitfinexBrokerageModel(AccountType accountType = AccountType.Margin)
             : base(accountType)
         {
@@ -66,19 +64,28 @@ namespace QuantConnect.Brokerages
         /// <returns></returns>
         public override decimal GetLeverage(Security security)
         {
-            if (AccountType == AccountType.Cash || security.IsInternalFeed())
+            if (AccountType == AccountType.Cash || security.IsInternalFeed() || security.Type == SecurityType.Base)
             {
                 return 1m;
             }
 
-            switch (security.Type)
+            if (security.Type == SecurityType.Crypto)
             {
-                case SecurityType.Crypto:
-                    return _maxLeverage;
-
-                default:
-                    throw new Exception($"Invalid security type: {security.Type}");
+                return _maxLeverage;
             }
+
+            throw new ArgumentException($"Invalid security type: {security.Type}", nameof(security));
+        }
+
+        /// <summary>
+        /// Get the benchmark for this model
+        /// </summary>
+        /// <param name="securities">SecurityService to create the security with if needed</param>
+        /// <returns>The benchmark for this brokerage</returns>
+        public override IBenchmark GetBenchmark(SecurityManager securities)
+        {
+            var symbol = Symbol.Create("BTCUSD", SecurityType.Crypto, Market.Bitfinex);
+            return SecurityBenchmark.CreateInstance(securities, symbol);
         }
 
         /// <summary>

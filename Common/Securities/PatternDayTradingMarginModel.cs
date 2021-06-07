@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -55,19 +55,31 @@ namespace QuantConnect.Securities
         }
 
         /// <summary>
+        /// Gets the current leverage of the security
+        /// </summary>
+        /// <param name="security">The security to get leverage for</param>
+        /// <returns>The current leverage in the security</returns>
+        public override decimal GetLeverage(Security security)
+        {
+            return base.GetLeverage(security) * (1 / GetMarginCorrectionFactor(security));
+        }
+
+        /// <summary>
         /// The percentage of an order's absolute cost that must be held in free cash in order to place the order
         /// </summary>
-        protected override decimal GetInitialMarginRequirement(Security security)
+        public override InitialMargin GetInitialMarginRequirement(InitialMarginParameters parameters)
         {
-            return base.GetInitialMarginRequirement(security)*GetMarginCorrectionFactor(security);
+            return new InitialMargin(base.GetInitialMarginRequirement(parameters).Value
+                * GetMarginCorrectionFactor(parameters.Security)
+            );
         }
 
         /// <summary>
         /// The percentage of the holding's absolute cost that must be held in free cash in order to avoid a margin call
         /// </summary>
-        public override decimal GetMaintenanceMarginRequirement(Security security)
+        public override MaintenanceMargin GetMaintenanceMargin(MaintenanceMarginParameters parameters)
         {
-            return base.GetMaintenanceMarginRequirement(security)*GetMarginCorrectionFactor(security);
+            return base.GetMaintenanceMargin(parameters) * GetMarginCorrectionFactor(parameters.Security);
         }
 
         /// <summary>
@@ -78,8 +90,8 @@ namespace QuantConnect.Securities
         private decimal GetMarginCorrectionFactor(Security security)
         {
             // when the market is open the base type returns the correct values
-            // when the market is closed, we need to multiply by a correction factor
-            return security.Exchange.ExchangeOpen ? 1m : _closedMarginCorrectionFactor;
+            // when the market is closed or when its closing soon, we need to multiply by a correction factor
+            return security.Exchange.ExchangeOpen && !security.Exchange.ClosingSoon ? 1m :_closedMarginCorrectionFactor;
         }
     }
 }

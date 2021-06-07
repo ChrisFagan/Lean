@@ -16,12 +16,11 @@
 using System;
 using System.IO;
 using QuantConnect.Interfaces;
-using QuantConnect.Logging;
 
 namespace QuantConnect.Lean.Engine.DataFeeds
 {
     /// <summary>
-    /// Default file provider functionality that does not attempt to retrieve any data
+    /// Default file provider functionality that retrieves data from disc to be used in an algorithm
     /// </summary>
     public class DefaultDataProvider : IDataProvider, IDisposable
     {
@@ -32,13 +31,20 @@ namespace QuantConnect.Lean.Engine.DataFeeds
         /// <returns>A <see cref="Stream"/> of the data requested</returns>
         public Stream Fetch(string key)
         {
-            if (!File.Exists(key))
+            try
             {
-                Log.Error("DefaultDataProvider.Fetch(): The specified file was not found: {0}", key);
-                return null;
+                return new FileStream(key, FileMode.Open, FileAccess.Read, FileShare.Read);
             }
+            catch (Exception exception)
+            {
+                if (exception is DirectoryNotFoundException
+                    || exception is FileNotFoundException)
+                {
+                    return null;
+                }
 
-            return new FileStream(key, FileMode.Open, FileAccess.Read);
+                throw;
+            }
         }
 
         /// <summary>

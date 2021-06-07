@@ -19,6 +19,7 @@ using System.Collections.Generic;
 using System.Linq;
 using QuantConnect.Data;
 using QuantConnect.Data.Auxiliary;
+using QuantConnect.Data.Market;
 using QuantConnect.Interfaces;
 using QuantConnect.Logging;
 
@@ -40,7 +41,8 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators.Factories
         /// <param name="factorFileProvider">Used for getting factor files</param>
         /// <param name="tradableDayNotifier">Tradable dates provider</param>
         /// <param name="mapFileResolver">Used for resolving the correct map files</param>
-        /// <param name="includeAuxiliaryData">True to emit auxiliary data</param>
+        /// <param name="startTime">Start date for the data request</param>
+        /// <param name="enablePriceScaling">Applies price factor</param>
         /// <returns>The new auxiliary data enumerator</returns>
         public static IEnumerator<BaseData> CreateEnumerators(
             IEnumerator<BaseData> rawDataEnumerator,
@@ -48,31 +50,49 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators.Factories
             IFactorFileProvider factorFileProvider,
             ITradableDatesNotifier tradableDayNotifier,
             MapFileResolver mapFileResolver,
-            bool includeAuxiliaryData)
+            DateTime startTime,
+            bool enablePriceScaling = true)
         {
-            var mapFileToUse = GetMapFileToUse(config, mapFileResolver);
-            var factorFile = GetFactorFileToUse(config, factorFileProvider);
+            var lazyFactorFile =
+                new Lazy<FactorFile>(() => SubscriptionUtils.GetFactorFileToUse(config, factorFileProvider));
+
+            var tradableEventProviders = new List<ITradableDateEventProvider>();
+
+            if (config.Symbol.SecurityType == SecurityType.Equity)
+            {
+                tradableEventProviders.Add(new SplitEventProvider());
+                tradableEventProviders.Add(new DividendEventProvider());
+            }
+
+            if (config.Symbol.SecurityType == SecurityType.Equity
+                || config.Symbol.SecurityType == SecurityType.Base
+                || config.Symbol.SecurityType == SecurityType.Option)
+            {
+                tradableEventProviders.Add(new MappingEventProvider());
+            }
+
+            tradableEventProviders.Add(new DelistingEventProvider());
 
             var enumerator = new AuxiliaryDataEnumerator(
                 config,
-                factorFile,
-                mapFileToUse,
-                new ITradableDateEventProvider[]
-                {
-                    new MappingEventProvider(),
-                    new SplitEventProvider(),
-                    new DividendEventProvider(),
-                    new DelistingEventProvider()
-                },
+                lazyFactorFile,
+                new Lazy<MapFile>(() => GetMapFileToUse(config, mapFileResolver)),
+                tradableEventProviders.ToArray(),
                 tradableDayNotifier,
-                includeAuxiliaryData);
+                startTime);
 
-            var priceScaleFactorEnumerator = new PriceScaleFactorEnumerator(
-                rawDataEnumerator,
-                config,
-                factorFile);
+            // avoid price scaling for backtesting; calculate it directly in worker
+            // and allow subscription to extract the the data depending on config data mode
+            var dataEnumerator = rawDataEnumerator;
+            if (enablePriceScaling)
+            {
+                dataEnumerator = new PriceScaleFactorEnumerator(
+                    rawDataEnumerator,
+                    config,
+                    lazyFactorFile);
+            }
 
-            return new SynchronizingEnumerator(priceScaleFactorEnumerator, enumerator);
+            return new SynchronizingEnumerator(dataEnumerator, enumerator);
         }
 
         private static MapFile GetMapFileToUse(
@@ -81,36 +101,18 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators.Factories
         {
             var mapFileToUse = new MapFile(config.Symbol.Value, new List<MapFileRow>());
 
-            // load up the map and factor files for equities
-            if (!config.IsCustomData && config.SecurityType == SecurityType.Equity)
+            // load up the map and factor files for equities, options, and custom data
+            if (config.TickerShouldBeMapped())
             {
                 try
                 {
-                    var mapFile = mapFileResolver.ResolveMapFile(
-                        config.Symbol.ID.Symbol,
-                        config.Symbol.ID.Date);
+                    var mapFile = mapFileResolver.ResolveMapFile(config.Symbol, config.Type);
 
                     // only take the resolved map file if it has data, otherwise we'll use the empty one we defined above
-                    if (mapFile.Any()) mapFileToUse = mapFile;
-                }
-                catch (Exception err)
-                {
-                    Log.Error(err, "CorporateEventEnumeratorFactory.GetMapFileToUse():" +
-                        " Map File: " + config.Symbol.ID + ": ");
-                }
-            }
-
-            // load up the map and factor files for underlying of equity option
-            if (!config.IsCustomData && config.SecurityType == SecurityType.Option)
-            {
-                try
-                {
-                    var mapFile = mapFileResolver.ResolveMapFile(
-                        config.Symbol.Underlying.ID.Symbol,
-                        config.Symbol.Underlying.ID.Date);
-
-                    // only take the resolved map file if it has data, otherwise we'll use the empty one we defined above
-                    if (mapFile.Any()) mapFileToUse = mapFile;
+                    if (mapFile.Any())
+                    {
+                        mapFileToUse = mapFile;
+                    }
                 }
                 catch (Exception err)
                 {
@@ -120,33 +122,6 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators.Factories
             }
 
             return mapFileToUse;
-        }
-
-        private static FactorFile GetFactorFileToUse(
-            SubscriptionDataConfig config,
-            IFactorFileProvider factorFileProvider)
-        {
-            var factorFileToUse = new FactorFile(config.Symbol.Value, new List<FactorFileRow>());
-
-            if (!config.IsCustomData
-                && config.SecurityType == SecurityType.Equity)
-            {
-                try
-                {
-                    var factorFile = factorFileProvider.Get(config.Symbol);
-                    if (factorFile != null)
-                    {
-                        factorFileToUse = factorFile;
-                    }
-                }
-                catch (Exception err)
-                {
-                    Log.Error(err, "CorporateEventEnumeratorFactory.GetFactorFileToUse(): Factors File: "
-                        + config.Symbol.ID + ": ");
-                }
-            }
-
-            return factorFileToUse;
         }
     }
 }

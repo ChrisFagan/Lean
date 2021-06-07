@@ -1,21 +1,23 @@
-sudo: required
 language: csharp
-mono:
-  - 5.8.0
-solution: QuantConnect.Lean.sln
+mono: none
+dotnet: 5.0
+os: linux
+dist: focal
 before_install:
   - export PATH="$HOME/miniconda3/bin:$PATH"
-  - wget https://cdn.quantconnect.com/miniconda/Miniconda3-4.3.31-Linux-x86_64.sh
-  - bash Miniconda3-4.3.31-Linux-x86_64.sh -b
-  - rm -rf Miniconda3-4.3.31-Linux-x86_64.sh
+  - export PYTHONNET_PYDLL="$HOME/miniconda3/lib/libpython3.6m.so"
+  - wget -q https://cdn.quantconnect.com/miniconda/Miniconda3-4.5.12-Linux-x86_64.sh
+  - bash Miniconda3-4.5.12-Linux-x86_64.sh -b
+  - rm -rf Miniconda3-4.5.12-Linux-x86_64.sh
   - sudo ln -s $HOME/miniconda3/lib/libpython3.6m.so /usr/lib/libpython3.6m.so
   - conda update -y python conda pip
-  - conda install -y cython pandas scipy
-install:
-  - nuget restore QuantConnect.Lean.sln
-  - nuget install NUnit.Runners -Version 2.6.4 -OutputDirectory testrunner
+  - conda install -y python=3.6.8
+  - conda install -y numpy=1.18.1
+  - conda install -y pandas=0.25.3
+  - conda install -y cython=0.29.15
+  - conda install -y scipy=1.4.1
+  - conda install -y wrapt=1.12.1
 script:
-  - msbuild /p:Configuration=Release /p:VbcToolExe=vbnc.exe QuantConnect.Lean.sln
-  - mono ./testrunner/NUnit.Runners.2.6.4/tools/nunit-console.exe ./Tests/bin/Release/QuantConnect.Tests.dll --exclude:TravisExclude --labels
-after_success:
-  - coveralls
+  - dotnet nuget add source $TRAVIS_BUILD_DIR/LocalPackages
+  - dotnet build /p:Configuration=Release /v:quiet /p:WarningLevel=1 QuantConnect.Lean.sln
+  - dotnet test ./Tests/bin/Release/QuantConnect.Tests.dll --filter TestCategory!=TravisExclude -- TestRunParameters.Parameter\(name=\"log-handler\", value=\"ConsoleErrorLogHandler\"\)

@@ -18,6 +18,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using QuantConnect.Logging;
 using QuantConnect.Util;
+using static QuantConnect.StringExtensions;
 
 namespace QuantConnect
 {
@@ -115,10 +116,6 @@ namespace QuantConnect
             memoryCap *= 1024 * 1024;
             var spikeLimit = memoryCap*2;
 
-            // give some granularity to the sleep interval if >= 1000ms
-            var sleepGranularity = sleepIntervalMillis >= 1000 ? 5 : 1;
-            var granularSleepIntervalMillis = sleepIntervalMillis / sleepGranularity;
-
             while (!task.IsCompleted && DateTime.Now < end)
             {
                 // if over 80% allocation force GC then sample
@@ -130,7 +127,8 @@ namespace QuantConnect
                 // if the rolling EMA > cap; or the spike is more than 2x the allocation.
                 if (memoryUsed > memoryCap || sample > spikeLimit)
                 {
-                    message = "Execution Security Error: Memory Usage Maxed Out - " + PrettyFormatRam(memoryCap) + "MB max, with last sample of " + PrettyFormatRam((long)sample) + "MB.";
+                    message = $"Execution Security Error: Memory Usage Maxed Out - {PrettyFormatRam(memoryCap)}MB max, " +
+                              $"with last sample of {PrettyFormatRam((long) sample)}MB.";
                     break;
                 }
 
@@ -138,14 +136,14 @@ namespace QuantConnect
                 {
                     if (memoryUsed > memoryCap * 0.8)
                     {
-                        Log.Error("Execution Security Error: Memory usage over 80% capacity. Sampled at {0}", sample);
+                        Log.Error(Invariant($"Execution Security Error: Memory usage over 80% capacity. Sampled at {sample}"));
                     }
 
                     Log.Trace("Isolator.ExecuteWithTimeLimit(): " +
                               $"Used: {PrettyFormatRam(memoryUsed)}, " +
                               $"Sample: {PrettyFormatRam((long)sample)}, " +
                               $"App: {PrettyFormatRam(OS.ApplicationMemoryUsed * 1024 * 1024)}, " +
-                              $"CurrentTimeStepElapsed: {isolatorLimitResult.CurrentTimeStepElapsed:mm':'ss'.'fff}");
+                              Invariant($"CurrentTimeStepElapsed: {isolatorLimitResult.CurrentTimeStepElapsed:mm':'ss'.'fff}"));
 
                     memoryLogger = DateTime.Now.AddMinutes(1);
                 }
@@ -158,27 +156,22 @@ namespace QuantConnect
                     break;
                 }
 
-                // for loop to give the sleep intervals some granularity
-                for (int i = 0; i < sleepGranularity; i++)
+                if (task.Wait(sleepIntervalMillis))
                 {
-                    Thread.Sleep(granularSleepIntervalMillis);
-                    if (task.IsCompleted)
-                    {
-                        break;
-                    }
+                    break;
                 }
             }
 
             if (task.IsCompleted == false && message == "")
             {
-                message = "Execution Security Error: Operation timed out - " + timeSpan.TotalMinutes + " minutes max. Check for recursive loops.";
-                Log.Trace("Isolator.ExecuteWithTimeLimit(): " + message);
+                message = $"Execution Security Error: Operation timed out - {timeSpan.TotalMinutes.ToStringInvariant()} minutes max. Check for recursive loops.";
+                Log.Trace($"Isolator.ExecuteWithTimeLimit(): {message}");
             }
 
             if (message != "")
             {
                 CancellationTokenSource.Cancel();
-                Log.Error("Security.ExecuteWithTimeLimit(): " + message);
+                Log.Error($"Security.ExecuteWithTimeLimit(): {message}");
                 throw new TimeoutException(message);
             }
             return task.IsCompleted;
@@ -204,9 +197,9 @@ namespace QuantConnect
         /// </summary>
         /// <param name="ramInBytes"></param>
         /// <returns></returns>
-        private static double PrettyFormatRam(long ramInBytes)
+        private static string PrettyFormatRam(long ramInBytes)
         {
-            return Math.Round(Convert.ToDouble(ramInBytes/(1024*1024)));
+            return Math.Round(Convert.ToDouble(ramInBytes/(1024*1024))).ToStringInvariant();
         }
     }
 }

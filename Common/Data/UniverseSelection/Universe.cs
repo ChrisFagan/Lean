@@ -30,6 +30,12 @@ namespace QuantConnect.Data.UniverseSelection
     public abstract class Universe : IDisposable
     {
         /// <summary>
+        /// Used to round the members time in universe <see cref="CanRemoveMember"/>, this is
+        /// done because we can not guarantee exact selection time in live mode, see GH issue 3287
+        /// </summary>
+        private TimeSpan? _minimumTimeInUniverseRoundingInterval;
+
+        /// <summary>
         /// Gets a value indicating that no change to the universe should be made
         /// </summary>
         public static readonly UnchangedUniverse Unchanged = UnchangedUniverse.Instance;
@@ -39,11 +45,16 @@ namespace QuantConnect.Data.UniverseSelection
         /// <summary>
         /// Gets the internal security collection used to define membership in this universe
         /// </summary>
-        internal virtual ConcurrentDictionary<Symbol, Member> Securities
+        public virtual ConcurrentDictionary<Symbol, Member> Securities
         {
             get;
             private set;
         }
+
+        /// <summary>
+        /// Event fired when the universe selection has changed
+        /// </summary>
+        public event EventHandler SelectionChanged;
 
         /// <summary>
         /// Gets the security type of this universe
@@ -64,14 +75,14 @@ namespace QuantConnect.Data.UniverseSelection
         /// <summary>
         /// Flag indicating if disposal of this universe has been requested
         /// </summary>
-        public bool DisposeRequested
+        public virtual bool DisposeRequested
         {
             get;
-            private set;
+            protected set;
         }
 
         /// <summary>
-        /// Gets the settings used for subscriptons added for this universe
+        /// Gets the settings used for subscriptions added for this universe
         /// </summary>
         public abstract UniverseSettings UniverseSettings
         {
@@ -81,17 +92,7 @@ namespace QuantConnect.Data.UniverseSelection
         /// <summary>
         /// Gets the configuration used to get universe data
         /// </summary>
-        public SubscriptionDataConfig Configuration
-        {
-            get; private set;
-        }
-
-        /// <summary>
-        /// Gets the instance responsible for initializing newly added securities
-        /// </summary>
-        /// <obsolete>The SecurityInitializer won't be used</obsolete>
-        [Obsolete("SecurityInitializer is obsolete and will not be used.")]
-        public ISecurityInitializer SecurityInitializer
+        public virtual SubscriptionDataConfig Configuration
         {
             get; private set;
         }
@@ -115,19 +116,6 @@ namespace QuantConnect.Data.UniverseSelection
             Securities = new ConcurrentDictionary<Symbol, Member>();
 
             Configuration = config;
-            SecurityInitializer = QuantConnect.Securities.SecurityInitializer.Null;
-        }
-
-        /// <summary>
-        /// Initializes a new instance of the <see cref="Universe"/> class
-        /// </summary>
-        /// <param name="config">The configuration used to source data for this universe</param>
-        /// <param name="securityInitializer">Initializes securities when they're added to the universe</param>
-        [Obsolete("This constructor is obsolete because SecurityInitializer is obsolete and will not be used.")]
-        protected Universe(SubscriptionDataConfig config, ISecurityInitializer securityInitializer)
-            : this(config)
-        {
-            SecurityInitializer = securityInitializer;
         }
 
         /// <summary>
@@ -156,8 +144,16 @@ namespace QuantConnect.Data.UniverseSelection
             Member member;
             if (Securities.TryGetValue(security.Symbol, out member))
             {
+                if (_minimumTimeInUniverseRoundingInterval == null)
+                {
+                    // lets set _minimumTimeInUniverseRoundingInterval once
+                    _minimumTimeInUniverseRoundingInterval = UniverseSettings.MinimumTimeInUniverse;
+                    AdjustMinimumTimeInUniverseRoundingInterval();
+                }
+
                 var timeInUniverse = utcTime - member.Added;
-                if (timeInUniverse >= UniverseSettings.MinimumTimeInUniverse)
+                if (timeInUniverse.Round(_minimumTimeInUniverseRoundingInterval.Value)
+                    >= UniverseSettings.MinimumTimeInUniverse)
                 {
                     return true;
                 }
@@ -176,6 +172,7 @@ namespace QuantConnect.Data.UniverseSelection
             // select empty set of symbols after dispose requested
             if (DisposeRequested)
             {
+                OnSelectionChanged();
                 return Enumerable.Empty<Symbol>();
             }
 
@@ -192,6 +189,8 @@ namespace QuantConnect.Data.UniverseSelection
             {
                 return Unchanged;
             }
+
+            OnSelectionChanged(selections);
             return selections;
         }
 
@@ -215,7 +214,7 @@ namespace QuantConnect.Data.UniverseSelection
         [Obsolete("CreateSecurity is obsolete and will not be called. The system will create the required Securities based on selected symbols")]
         public virtual Security CreateSecurity(Symbol symbol, IAlgorithm algorithm, MarketHoursDatabase marketHoursDatabase, SymbolPropertiesDatabase symbolPropertiesDatabase)
         {
-            throw new Exception("CreateSecurity is obsolete and should not be called." +
+            throw new InvalidOperationException("CreateSecurity is obsolete and should not be called." +
                 "The system will create the required Securities based on selected symbols");
         }
 
@@ -229,7 +228,7 @@ namespace QuantConnect.Data.UniverseSelection
         [Obsolete("This overload is obsolete and will not be called. It was not capable of creating new SubscriptionDataConfig due to lack of information")]
         public virtual IEnumerable<SubscriptionRequest> GetSubscriptionRequests(Security security, DateTime currentTimeUtc, DateTime maximumEndTimeUtc)
         {
-            throw new Exception("This overload is obsolete and should not be called." +
+            throw new InvalidOperationException("This overload is obsolete and should not be called." +
                 "It was not capable of creating new SubscriptionDataConfig due to lack of information");
         }
 
@@ -313,21 +312,20 @@ namespace QuantConnect.Data.UniverseSelection
         }
 
         /// <summary>
-        /// Sets the security initializer, used to initialize/configure securities after creation
+        /// Marks this universe as disposed and ready to remove all child subscriptions
         /// </summary>
-        /// <param name="securityInitializer">The security initializer</param>
-        [Obsolete("SecurityInitializer is obsolete and will not be used.")]
-        public virtual void SetSecurityInitializer(ISecurityInitializer securityInitializer)
+        public virtual void Dispose()
         {
-            SecurityInitializer = securityInitializer;
+            DisposeRequested = true;
         }
 
         /// <summary>
-        /// Marks this universe as disposed and ready to remove all child subscriptions
+        /// Event invocator for the <see cref="SelectionChanged"/> event
         /// </summary>
-        public void Dispose()
+        /// <param name="selection">The current universe selection</param>
+        protected void OnSelectionChanged(HashSet<Symbol> selection = null)
         {
-            DisposeRequested = true;
+            SelectionChanged?.Invoke(this, new SelectionEventArgs(selection ?? new HashSet<Symbol>()));
         }
 
         /// <summary>
@@ -346,14 +344,73 @@ namespace QuantConnect.Data.UniverseSelection
             IEnumerator IEnumerable.GetEnumerator() { yield break; }
         }
 
-        internal sealed class Member
+        /// <summary>
+        /// Will adjust the <see cref="_minimumTimeInUniverseRoundingInterval"/>
+        /// so rounding is performed as expected
+        /// </summary>
+        private void AdjustMinimumTimeInUniverseRoundingInterval()
         {
+            if (_minimumTimeInUniverseRoundingInterval >= Time.OneDay)
+            {
+                _minimumTimeInUniverseRoundingInterval = Time.OneDay;
+            }
+            else if (_minimumTimeInUniverseRoundingInterval >= Time.OneHour)
+            {
+                _minimumTimeInUniverseRoundingInterval = Time.OneHour;
+            }
+            else if (_minimumTimeInUniverseRoundingInterval >= Time.OneMinute)
+            {
+                _minimumTimeInUniverseRoundingInterval = Time.OneMinute;
+            }
+            else if (_minimumTimeInUniverseRoundingInterval >= Time.OneSecond)
+            {
+                _minimumTimeInUniverseRoundingInterval = Time.OneSecond;
+            }
+        }
+
+        /// <summary>
+        /// Member of the Universe
+        /// </summary>
+        public sealed class Member
+        {
+            /// <summary>
+            /// DateTime when added
+            /// </summary>
             public readonly DateTime Added;
+
+            /// <summary>
+            /// The security that was added
+            /// </summary>
             public readonly Security Security;
+
+            /// <summary>
+            /// Initialize a new member for the universe
+            /// </summary>
+            /// <param name="added">DateTime added</param>
+            /// <param name="security">Security to add</param>
             public Member(DateTime added, Security security)
             {
                 Added = added;
                 Security = security;
+            }
+        }
+
+        /// <summary>
+        /// Event fired when the universe selection changes
+        /// </summary>
+        public class SelectionEventArgs : EventArgs
+        {
+            /// <summary>
+            /// The current universe selection
+            /// </summary>
+            public HashSet<Symbol> CurrentSelection { get; }
+
+            /// <summary>
+            /// Creates a new instance
+            /// </summary>
+            public SelectionEventArgs(HashSet<Symbol> currentSelection)
+            {
+                CurrentSelection = currentSelection;
             }
         }
     }

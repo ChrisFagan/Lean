@@ -14,9 +14,11 @@
 */
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using QuantConnect.Data;
 using QuantConnect.Data.Market;
@@ -24,6 +26,7 @@ using QuantConnect.Interfaces;
 using QuantConnect.Logging;
 using QuantConnect.Orders;
 using QuantConnect.Securities;
+using QuantConnect.Util;
 
 namespace QuantConnect.Tests.Brokerages
 {
@@ -36,28 +39,13 @@ namespace QuantConnect.Tests.Brokerages
         private OrderProvider _orderProvider;
         private SecurityProvider _securityProvider;
 
-        /// <summary>
-        /// Provides the data required to test each order type in various cases
-        /// </summary>
-        public virtual TestCaseData[] OrderParameters
-        {
-            get
-            {
-                return new[]
-                {
-                    new TestCaseData(new MarketOrderTestParameters(Symbol)).SetName("MarketOrder"),
-                    new TestCaseData(new LimitOrderTestParameters(Symbol, HighPrice, LowPrice)).SetName("LimitOrder"),
-                    new TestCaseData(new StopMarketOrderTestParameters(Symbol, HighPrice, LowPrice)).SetName("StopMarketOrder"),
-                    new TestCaseData(new StopLimitOrderTestParameters(Symbol, HighPrice, LowPrice)).SetName("StopLimitOrder")
-                };
-            }
-        }
-
         #region Test initialization and cleanup
 
         [SetUp]
         public void Setup()
         {
+            Log.LogHandler = new NUnitLogHandler();
+
             Log.Trace("");
             Log.Trace("");
             Log.Trace("--- SETUP ---");
@@ -123,12 +111,6 @@ namespace QuantConnect.Tests.Brokerages
                 Assert.Fail("Failed to connect to brokerage");
             }
 
-            //gdax does not have a user data stream. Instead, we need to symbol subscribe and monitor for our orders.
-            if (brokerage.Name == "GDAX")
-            {
-                ((QuantConnect.Brokerages.GDAX.GDAXBrokerage)brokerage).Subscribe(new[] { Symbol });
-            }
-
             Log.Trace("");
             Log.Trace("GET OPEN ORDERS");
             Log.Trace("");
@@ -145,6 +127,7 @@ namespace QuantConnect.Tests.Brokerages
                 // these securities don't need to be real, just used for the ISecurityProvider impl, required
                 // by brokerages to track holdings
                 SecurityProvider[accountHolding.Symbol] = CreateSecurity(accountHolding.Symbol);
+                SecurityProvider[accountHolding.Symbol].Holdings.SetHoldings(accountHolding.AveragePrice, accountHolding.Quantity);
             }
             brokerage.OrderStatusChanged += (sender, args) =>
             {
@@ -179,7 +162,7 @@ namespace QuantConnect.Tests.Brokerages
             return brokerage;
         }
 
-        internal static Security CreateSecurity(Symbol symbol)
+        public static Security CreateSecurity(Symbol symbol)
         {
             return new Security(
                 SecurityExchangeHours.AlwaysOpen(TimeZones.NewYork),
@@ -195,7 +178,9 @@ namespace QuantConnect.Tests.Brokerages
                 ),
                 new Cash(Currencies.USD, 0, 1m),
                 SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null,
+                new SecurityCache()
             );
         }
 
@@ -221,6 +206,8 @@ namespace QuantConnect.Tests.Brokerages
         /// <param name="brokerage">The brokerage instance to be disposed of</param>
         protected virtual void DisposeBrokerage(IBrokerage brokerage)
         {
+            brokerage.Disconnect();
+            brokerage.DisposeSafely();
         }
 
         /// <summary>
@@ -270,16 +257,6 @@ namespace QuantConnect.Tests.Brokerages
         protected abstract SecurityType SecurityType { get; }
 
         /// <summary>
-        /// Gets a high price for the specified symbol so a limit sell won't fill
-        /// </summary>
-        protected abstract decimal HighPrice { get; }
-
-        /// <summary>
-        /// Gets a low price for the specified symbol so a limit buy won't fill
-        /// </summary>
-        protected abstract decimal LowPrice { get; }
-
-        /// <summary>
         /// Returns whether or not the brokers order methods implementation are async
         /// </summary>
         protected abstract bool IsAsync();
@@ -311,8 +288,7 @@ namespace QuantConnect.Tests.Brokerages
             Assert.IsTrue(Brokerage.IsConnected);
         }
 
-        [Test, TestCaseSource("OrderParameters")]
-        public void CancelOrders(OrderTestParameters parameters)
+        public virtual void CancelOrders(OrderTestParameters parameters)
         {
             const int secondsTimeout = 20;
             Log.Trace("");
@@ -370,8 +346,7 @@ namespace QuantConnect.Tests.Brokerages
             Brokerage.OrderStatusChanged -= orderStatusCallback;
         }
 
-        [Test, TestCaseSource("OrderParameters")]
-        public void LongFromZero(OrderTestParameters parameters)
+        public virtual void LongFromZero(OrderTestParameters parameters)
         {
             Log.Trace("");
             Log.Trace("LONG FROM ZERO");
@@ -379,8 +354,7 @@ namespace QuantConnect.Tests.Brokerages
             PlaceOrderWaitForStatus(parameters.CreateLongOrder(GetDefaultQuantity()), parameters.ExpectedStatus);
         }
 
-        [Test, TestCaseSource("OrderParameters")]
-        public void CloseFromLong(OrderTestParameters parameters)
+        public virtual void CloseFromLong(OrderTestParameters parameters)
         {
             Log.Trace("");
             Log.Trace("CLOSE FROM LONG");
@@ -392,7 +366,6 @@ namespace QuantConnect.Tests.Brokerages
             PlaceOrderWaitForStatus(parameters.CreateShortOrder(GetDefaultQuantity()), parameters.ExpectedStatus);
         }
 
-        [Test, TestCaseSource("OrderParameters")]
         public virtual void ShortFromZero(OrderTestParameters parameters)
         {
             Log.Trace("");
@@ -401,7 +374,6 @@ namespace QuantConnect.Tests.Brokerages
             PlaceOrderWaitForStatus(parameters.CreateShortOrder(GetDefaultQuantity()), parameters.ExpectedStatus);
         }
 
-        [Test, TestCaseSource("OrderParameters")]
         public virtual void CloseFromShort(OrderTestParameters parameters)
         {
             Log.Trace("");
@@ -414,7 +386,6 @@ namespace QuantConnect.Tests.Brokerages
             PlaceOrderWaitForStatus(parameters.CreateLongOrder(GetDefaultQuantity()), parameters.ExpectedStatus);
         }
 
-        [Test, TestCaseSource("OrderParameters")]
         public virtual void ShortFromLong(OrderTestParameters parameters)
         {
             Log.Trace("");
@@ -432,7 +403,6 @@ namespace QuantConnect.Tests.Brokerages
             }
         }
 
-        [Test, TestCaseSource("OrderParameters")]
         public virtual void LongFromShort(OrderTestParameters parameters)
         {
             Log.Trace("");
@@ -451,17 +421,17 @@ namespace QuantConnect.Tests.Brokerages
         }
 
         [Test]
-        public void GetCashBalanceContainsUSD()
+        public virtual void GetCashBalanceContainsSomething()
         {
             Log.Trace("");
             Log.Trace("GET CASH BALANCE");
             Log.Trace("");
             var balance = Brokerage.GetCashBalance();
-            Assert.AreEqual(1, balance.Count(x => x.Currency == Currencies.USD));
+            Assert.IsTrue(balance.Any());
         }
 
         [Test]
-        public void GetAccountHoldings()
+        public virtual void GetAccountHoldings()
         {
             Log.Trace("");
             Log.Trace("GET ACCOUNT HOLDINGS");
@@ -483,7 +453,7 @@ namespace QuantConnect.Tests.Brokerages
             Assert.AreEqual(GetDefaultQuantity(), afterQuantity - beforeQuantity);
         }
 
-        [Test, Ignore("This test requires reading the output and selection of a low volume security for the Brokerage")]
+        [Test, Explicit("This test requires reading the output and selection of a low volume security for the Brokerage")]
         public void PartialFills()
         {
             var manualResetEvent = new ManualResetEvent(false);
@@ -496,7 +466,7 @@ namespace QuantConnect.Tests.Brokerages
                 lock (sync)
                 {
                     remaining -= orderEvent.FillQuantity;
-                    Console.WriteLine("Remaining: " + remaining + " FillQuantity: " + orderEvent.FillQuantity);
+                    Log.Trace("Remaining: " + remaining + " FillQuantity: " + orderEvent.FillQuantity);
                     if (orderEvent.Status == OrderStatus.Filled)
                     {
                         manualResetEvent.Set();
@@ -515,7 +485,7 @@ namespace QuantConnect.Tests.Brokerages
             manualResetEvent.WaitOne(2500);
             manualResetEvent.WaitOne(2500);
 
-            Console.WriteLine("Remaining: " + remaining);
+            Log.Trace("Remaining: " + remaining);
             Assert.AreEqual(0, remaining);
         }
 
@@ -636,5 +606,45 @@ namespace QuantConnect.Tests.Brokerages
 
             return order;
         }
+
+        protected SubscriptionDataConfig GetSubscriptionDataConfig<T>(Symbol symbol, Resolution resolution)
+        {
+            return new SubscriptionDataConfig(
+                typeof(T),
+                symbol,
+                resolution,
+                TimeZones.Utc,
+                TimeZones.Utc,
+                true,
+                true,
+                false);
+        }
+
+        protected void ProcessFeed(IEnumerator<BaseData> enumerator, CancellationTokenSource cancellationToken, Action<BaseData> callback = null)
+        {
+            Task.Factory.StartNew(() =>
+            {
+                try
+                {
+                    while (enumerator.MoveNext() && !cancellationToken.IsCancellationRequested)
+                    {
+                        BaseData tick = enumerator.Current;
+                        if (callback != null)
+                        {
+                            callback.Invoke(tick);
+                        }
+                    }
+                }
+                catch (AssertionException)
+                {
+                    throw;
+                }
+                catch (Exception err)
+                {
+                    Log.Error(err.Message);
+                }
+            }, cancellationToken.Token);
+        }
+
     }
 }

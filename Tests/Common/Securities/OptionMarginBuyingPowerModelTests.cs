@@ -1,4 +1,4 @@
-﻿/*
+/*
  * QUANTCONNECT.COM - Democratizing Finance, Empowering Individuals.
  * Lean Algorithmic Trading Engine v2.0. Copyright 2014 QuantConnect Corporation.
  *
@@ -20,7 +20,6 @@ using QuantConnect.Data;
 using QuantConnect.Data.Market;
 using QuantConnect.Orders;
 using QuantConnect.Securities;
-using QuantConnect.Securities.Future;
 using QuantConnect.Securities.Option;
 using QuantConnect.Tests.Engine.DataFeeds;
 
@@ -33,13 +32,6 @@ namespace QuantConnect.Tests.Common.Securities
     public class OptionMarginBuyingPowerModelTests
     {
         // Test class to enable calling protected methods
-        public class TestOptionMarginModel : OptionMarginModel
-        {
-            public new decimal GetMaintenanceMargin(Security security)
-            {
-                return base.GetMaintenanceMargin(security);
-            }
-        }
 
         [Test]
         public void OptionMarginBuyingPowerModelInitializationTests()
@@ -59,7 +51,8 @@ namespace QuantConnect.Tests.Common.Securities
                 ),
                 new Cash(Currencies.USD, 0, 1m),
                 new OptionSymbolProperties("", Currencies.USD, 100, 0.01m, 1),
-                ErrorCurrencyConverter.Instance
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null
             );
             var buyingPowerModel = new OptionMarginModel();
 
@@ -81,7 +74,8 @@ namespace QuantConnect.Tests.Common.Securities
                 new SubscriptionDataConfig(typeof(TradeBar), Symbols.SPY, Resolution.Minute, tz, tz, true, false, false),
                 new Cash(Currencies.USD, 0, 1m),
                 SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null
             );
             equity.SetMarketPrice(new Tick { Value = underlyingPrice });
 
@@ -99,7 +93,8 @@ namespace QuantConnect.Tests.Common.Securities
                 ),
                 new Cash(Currencies.USD, 0, 1m),
                 new OptionSymbolProperties("", Currencies.USD, 100, 0.01m, 1),
-                ErrorCurrencyConverter.Instance
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null
             );
             optionPut.SetMarketPrice(new Tick { Value = price });
             optionPut.Underlying = equity;
@@ -119,13 +114,14 @@ namespace QuantConnect.Tests.Common.Securities
                 ),
                 new Cash(Currencies.USD, 0, 1m),
                 new OptionSymbolProperties("", Currencies.USD, 100, 0.01m, 1),
-                ErrorCurrencyConverter.Instance
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null
             );
             optionCall.SetMarketPrice(new Tick { Value = price });
             optionCall.Underlying = equity;
             optionCall.Holdings.SetHoldings(1.5m, 2);
 
-            var buyingPowerModel = new TestOptionMarginModel();
+            var buyingPowerModel = new OptionMarginModel();
 
             // we expect long positions to be 100% charged.
             Assert.AreEqual(optionPut.Holdings.AbsoluteHoldingsCost, buyingPowerModel.GetMaintenanceMargin(optionPut));
@@ -144,7 +140,8 @@ namespace QuantConnect.Tests.Common.Securities
                 new SubscriptionDataConfig(typeof(TradeBar), Symbols.SPY, Resolution.Minute, tz, tz, true, false, false),
                 new Cash(Currencies.USD, 0, 1m),
                 SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null
             );
             equity.SetMarketPrice(new Tick { Value = underlyingPrice });
 
@@ -162,13 +159,14 @@ namespace QuantConnect.Tests.Common.Securities
                 ),
                 new Cash(Currencies.USD, 0, 1m),
                 new OptionSymbolProperties("", Currencies.USD, 100, 0.01m, 1),
-                ErrorCurrencyConverter.Instance
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null
             );
             optionCall.SetMarketPrice(new Tick { Value = price });
             optionCall.Underlying = equity;
             optionCall.Holdings.SetHoldings(price, -2);
 
-            var buyingPowerModel = new TestOptionMarginModel();
+            var buyingPowerModel = new OptionMarginModel();
 
             // short option positions are very expensive in terms of margin.
             // Margin = 2 * 100 * (14 + 0.2 * 196) = 10640
@@ -187,7 +185,8 @@ namespace QuantConnect.Tests.Common.Securities
                 new SubscriptionDataConfig(typeof(TradeBar), Symbols.SPY, Resolution.Minute, tz, tz, true, false, false),
                 new Cash(Currencies.USD, 0, 1m),
                 SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null
             );
             equity.SetMarketPrice(new Tick { Value = underlyingPrice });
 
@@ -205,13 +204,14 @@ namespace QuantConnect.Tests.Common.Securities
                 ),
                 new Cash(Currencies.USD, 0, 1m),
                 new OptionSymbolProperties("", Currencies.USD, 100, 0.01m, 1),
-                ErrorCurrencyConverter.Instance
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null
             );
             optionCall.SetMarketPrice(new Tick { Value = price });
             optionCall.Underlying = equity;
             optionCall.Holdings.SetHoldings(price, -2);
 
-            var buyingPowerModel = new TestOptionMarginModel();
+            var buyingPowerModel = new OptionMarginModel();
 
             // short option positions are very expensive in terms of margin.
             // Margin = 2 * 100 * (14 + 0.2 * 180 - (192 - 180)) = 7600
@@ -230,7 +230,8 @@ namespace QuantConnect.Tests.Common.Securities
                 new SubscriptionDataConfig(typeof(TradeBar), Symbols.SPY, Resolution.Minute, tz, tz, true, false, false),
                 new Cash(Currencies.USD, 0, 1m),
                 SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null
             );
             equity.SetMarketPrice(new Tick { Value = underlyingPrice });
 
@@ -248,13 +249,14 @@ namespace QuantConnect.Tests.Common.Securities
                 ),
                 new Cash(Currencies.USD, 0, 1m),
                 new OptionSymbolProperties("", Currencies.USD, 100, 0.01m, 1),
-                ErrorCurrencyConverter.Instance
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null
             );
             optionPut.SetMarketPrice(new Tick { Value = price });
             optionPut.Underlying = equity;
             optionPut.Holdings.SetHoldings(price, -2);
 
-            var buyingPowerModel = new TestOptionMarginModel();
+            var buyingPowerModel = new OptionMarginModel();
 
             // short option positions are very expensive in terms of margin.
             // Margin = 2 * 100 * (14 + 0.2 * 182) = 10080
@@ -273,7 +275,8 @@ namespace QuantConnect.Tests.Common.Securities
                 new SubscriptionDataConfig(typeof(TradeBar), Symbols.SPY, Resolution.Minute, tz, tz, true, false, false),
                 new Cash(Currencies.USD, 0, 1m),
                 SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null
             );
             equity.SetMarketPrice(new Tick { Value = underlyingPrice });
 
@@ -291,13 +294,14 @@ namespace QuantConnect.Tests.Common.Securities
                 ),
                 new Cash(Currencies.USD, 0, 1m),
                 new OptionSymbolProperties("", Currencies.USD, 100, 0.01m, 1),
-                ErrorCurrencyConverter.Instance
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null
             );
             optionCall.SetMarketPrice(new Tick { Value = price });
             optionCall.Underlying = equity;
             optionCall.Holdings.SetHoldings(price, -2);
 
-            var buyingPowerModel = new TestOptionMarginModel();
+            var buyingPowerModel = new OptionMarginModel();
 
             // short option positions are very expensive in terms of margin.
             // Margin = 2 * 100 * (14 + 0.2 * 196 - (196 - 192)) = 9840
@@ -316,7 +320,8 @@ namespace QuantConnect.Tests.Common.Securities
                 new SubscriptionDataConfig(typeof(TradeBar), Symbols.SPY, Resolution.Minute, tz, tz, true, false, false),
                 new Cash(Currencies.USD, 0, 1m),
                 SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null
             );
             equity.SetMarketPrice(new Tick { Value = underlyingPrice });
 
@@ -326,13 +331,14 @@ namespace QuantConnect.Tests.Common.Securities
                 new SubscriptionDataConfig(typeof(TradeBar), optionPutSymbol, Resolution.Minute, tz, tz, true, false, false),
                 new Cash(Currencies.USD, 0, 1m),
                 new OptionSymbolProperties("", Currencies.USD, 100, 0.01m, 1),
-                ErrorCurrencyConverter.Instance
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null
             );
             optionPut.SetMarketPrice(new Tick { Value = price });
             optionPut.Underlying = equity;
             optionPut.Holdings.SetHoldings(price, -2);
 
-            var buyingPowerModel = new TestOptionMarginModel();
+            var buyingPowerModel = new OptionMarginModel();
 
             // short option positions are very expensive in terms of margin.
             // Margin = 2 * 100 * (0.18 + 0.2 * 200) = 8036
@@ -353,7 +359,8 @@ namespace QuantConnect.Tests.Common.Securities
                 new SubscriptionDataConfig(typeof(TradeBar), Symbols.SPY, Resolution.Minute, tz, tz, true, false, false),
                 new Cash(Currencies.USD, 0, 1m),
                 SymbolProperties.GetDefault(Currencies.USD),
-                ErrorCurrencyConverter.Instance
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null
             );
             equity.SetMarketPrice(new Tick { Value = underlyingPriceStart });
 
@@ -363,13 +370,14 @@ namespace QuantConnect.Tests.Common.Securities
                 new SubscriptionDataConfig(typeof(TradeBar), optionPutSymbol, Resolution.Minute, tz, tz, true, false, false),
                 new Cash(Currencies.USD, 0, 1m),
                 new OptionSymbolProperties("", Currencies.USD, 100, 0.01m, 1),
-                ErrorCurrencyConverter.Instance
+                ErrorCurrencyConverter.Instance,
+                RegisteredSecurityDataTypesProvider.Null
             );
             optionPut.SetMarketPrice(new Tick { Value = optionPriceStart });
             optionPut.Underlying = equity;
             optionPut.Holdings.SetHoldings(optionPriceStart, -2);
 
-            var buyingPowerModel = new TestOptionMarginModel();
+            var buyingPowerModel = new OptionMarginModel();
 
             // short option positions are very expensive in terms of margin.
             // Margin = 2 * 100 * (4.68 + 0.2 * 192) = 8616

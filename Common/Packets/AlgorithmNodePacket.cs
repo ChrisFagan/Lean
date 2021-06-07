@@ -16,6 +16,7 @@
 
 using System.Collections.Generic;
 using Newtonsoft.Json;
+using static QuantConnect.StringExtensions;
 
 namespace QuantConnect.Packets
 {
@@ -33,6 +34,12 @@ namespace QuantConnect.Packets
         { }
 
         /// <summary>
+        /// The host name to use if any
+        /// </summary>
+        [JsonProperty(PropertyName = "sHostName")]
+        public string HostName;
+
+        /// <summary>
         /// User Id placing request
         /// </summary>
         [JsonProperty(PropertyName = "iUserID")]
@@ -47,6 +54,12 @@ namespace QuantConnect.Packets
         /// </summary>
         [JsonProperty(PropertyName = "iProjectID")]
         public int ProjectId = 0;
+
+        /// <summary>
+        /// Project name of the request
+        /// </summary>
+        [JsonProperty(PropertyName = "sProjectName")]
+        public string ProjectName;
 
         /// <summary>
         /// Algorithm Id - BacktestId or DeployId - Common Id property between packets.
@@ -150,7 +163,7 @@ namespace QuantConnect.Packets
         /// </summary>
         public string GetAlgorithmName()
         {
-            return $"{UserId}-{ProjectId}-{AlgorithmId}";
+            return Invariant($"{UserId}-{ProjectId}-{AlgorithmId}");
         }
     }
 }

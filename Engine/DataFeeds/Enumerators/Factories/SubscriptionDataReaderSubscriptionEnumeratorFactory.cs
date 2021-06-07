@@ -15,7 +15,9 @@
 */
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using QuantConnect.Data;
 using QuantConnect.Data.Auxiliary;
 using QuantConnect.Data.UniverseSelection;
@@ -26,19 +28,23 @@ using QuantConnect.Util;
 namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators.Factories
 {
     /// <summary>
-    /// Provides an implementation of <see cref="ISubscriptionEnumeratorFactory"/> that used the
-    /// <see cref="SubscriptionDataReader"/>
+    /// Provides an implementation of <see cref="ISubscriptionEnumeratorFactory"/> that used the <see cref="SubscriptionDataReader"/>
     /// </summary>
+    /// <remarks>Only used on backtesting by the <see cref="FileSystemDataFeed"/></remarks>
     public class SubscriptionDataReaderSubscriptionEnumeratorFactory : ISubscriptionEnumeratorFactory, IDisposable
     {
         private readonly bool _isLiveMode;
-        private readonly bool _includeAuxiliaryData;
         private readonly IResultHandler _resultHandler;
         private readonly IFactorFileProvider _factorFileProvider;
         private readonly ZipDataCacheProvider _zipDataCacheProvider;
+        private readonly ConcurrentDictionary<Symbol, string> _numericalPrecisionLimitedWarnings;
+        private readonly int _numericalPrecisionLimitedWarningsMaxCount = 10;
+        private readonly ConcurrentDictionary<Symbol, string> _startDateLimitedWarnings;
+        private readonly int _startDateLimitedWarningsMaxCount = 10;
         private readonly Func<SubscriptionRequest, IEnumerable<DateTime>> _tradableDaysProvider;
         private readonly IMapFileProvider _mapFileProvider;
-
+        private readonly bool _enablePriceScaling;
+        
         /// <summary>
         /// Initializes a new instance of the <see cref="SubscriptionDataReaderSubscriptionEnumeratorFactory"/> class
         /// </summary>
@@ -46,26 +52,26 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators.Factories
         /// <param name="mapFileProvider">The map file provider</param>
         /// <param name="factorFileProvider">The factor file provider</param>
         /// <param name="dataProvider">Provider used to get data when it is not present on disk</param>
-        /// <param name="isLiveMode">True if runnig live algorithm, false otherwise</param>
-        /// <param name="includeAuxiliaryData">True to check for auxiliary data, false otherwise</param>
         /// <param name="tradableDaysProvider">Function used to provide the tradable dates to be enumerator.
         /// Specify null to default to <see cref="SubscriptionRequest.TradableDays"/></param>
+        /// <param name="enablePriceScaling">Applies price factor</param>
         public SubscriptionDataReaderSubscriptionEnumeratorFactory(IResultHandler resultHandler,
             IMapFileProvider mapFileProvider,
             IFactorFileProvider factorFileProvider,
             IDataProvider dataProvider,
-            bool isLiveMode,
-            bool includeAuxiliaryData,
-            Func<SubscriptionRequest, IEnumerable<DateTime>> tradableDaysProvider = null
+            Func<SubscriptionRequest, IEnumerable<DateTime>> tradableDaysProvider = null,
+            bool enablePriceScaling = true
             )
         {
             _resultHandler = resultHandler;
             _mapFileProvider = mapFileProvider;
             _factorFileProvider = factorFileProvider;
-            _zipDataCacheProvider = new ZipDataCacheProvider(dataProvider);
-            _isLiveMode = isLiveMode;
-            _includeAuxiliaryData = includeAuxiliaryData;
+            _zipDataCacheProvider = new ZipDataCacheProvider(dataProvider, isDataEphemeral: false);
+            _numericalPrecisionLimitedWarnings = new ConcurrentDictionary<Symbol, string>();
+            _startDateLimitedWarnings = new ConcurrentDictionary<Symbol, string>();
+            _isLiveMode = false;
             _tradableDaysProvider = tradableDaysProvider ?? (request => request.TradableDays);
+            _enablePriceScaling = enablePriceScaling;
         }
 
         /// <summary>
@@ -76,8 +82,7 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators.Factories
         /// <returns>An enumerator reading the subscription request</returns>
         public IEnumerator<BaseData> CreateEnumerator(SubscriptionRequest request, IDataProvider dataProvider)
         {
-            var mapFileResolver = request.Configuration.SecurityType == SecurityType.Equity ||
-                                  request.Configuration.SecurityType == SecurityType.Option
+            var mapFileResolver = request.Configuration.TickerShouldBeMapped()
                                     ? _mapFileProvider.Get(request.Security.Symbol.ID.Market)
                                     : MapFileResolver.Empty;
 
@@ -92,9 +97,24 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators.Factories
                 );
 
             dataReader.InvalidConfigurationDetected += (sender, args) => { _resultHandler.ErrorMessage(args.Message); };
-            dataReader.NumericalPrecisionLimited += (sender, args) => { _resultHandler.DebugMessage(args.Message); };
+            dataReader.StartDateLimited += (sender, args) =>
+            {
+                // Queue this warning into our dictionary to report on dispose
+                if (_startDateLimitedWarnings.Count <= _startDateLimitedWarningsMaxCount)
+                {
+                    _startDateLimitedWarnings.TryAdd(args.Symbol, args.Message);
+                }
+            };
             dataReader.DownloadFailed += (sender, args) => { _resultHandler.ErrorMessage(args.Message, args.StackTrace); };
             dataReader.ReaderErrorDetected += (sender, args) => { _resultHandler.RuntimeError(args.Message, args.StackTrace); };
+            dataReader.NumericalPrecisionLimited += (sender, args) =>
+            {
+                // Set a hard limit to keep this warning list from getting unnecessarily large
+                if (_numericalPrecisionLimitedWarnings.Count <= _numericalPrecisionLimitedWarningsMaxCount)
+                {
+                    _numericalPrecisionLimitedWarnings.TryAdd(args.Symbol, args.Message);
+                }
+            };
 
             var result = CorporateEventEnumeratorFactory.CreateEnumerators(
                 dataReader,
@@ -102,10 +122,8 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators.Factories
                 _factorFileProvider,
                 dataReader,
                 mapFileResolver,
-                _includeAuxiliaryData);
-
-            // has to be initialized after adding all the enumerators since it will execute a MoveNext
-            dataReader.Initialize();
+                request.StartTimeLocal,
+                _enablePriceScaling);
 
             return result;
         }
@@ -116,6 +134,36 @@ namespace QuantConnect.Lean.Engine.DataFeeds.Enumerators.Factories
         /// <filterpriority>2</filterpriority>
         public void Dispose()
         {
+            // Log our numerical precision limited warnings if any
+            if (!_numericalPrecisionLimitedWarnings.IsNullOrEmpty())
+            {
+                var message = "Due to numerical precision issues in the factor file, data for the following" +
+                    $" symbols was adjust to a later starting date: {string.Join(", ", _numericalPrecisionLimitedWarnings.Values.Take(_numericalPrecisionLimitedWarningsMaxCount))}";
+
+                // If we reached our max warnings count suggest that more may have been left out
+                if (_numericalPrecisionLimitedWarnings.Count >= _numericalPrecisionLimitedWarningsMaxCount)
+                {
+                    message += "...";
+                }
+
+                _resultHandler.DebugMessage(message);
+            }
+
+            // Log our start date adjustments because of map files
+            if (!_startDateLimitedWarnings.IsNullOrEmpty())
+            {
+                var message = "The starting dates for the following symbols have been adjusted to match their" +
+                    $" map files first date: {string.Join(", ", _startDateLimitedWarnings.Values.Take(_startDateLimitedWarningsMaxCount))}";
+
+                // If we reached our max warnings count suggest that more may have been left out
+                if (_startDateLimitedWarnings.Count >= _startDateLimitedWarningsMaxCount)
+                {
+                    message += "...";
+                }
+
+                _resultHandler.DebugMessage(message);
+            }
+
             _zipDataCacheProvider?.DisposeSafely();
         }
     }

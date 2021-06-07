@@ -32,6 +32,11 @@ namespace QuantConnect.Util
         private readonly Thread _workerThread;
 
         /// <summary>
+        /// The worker thread instance
+        /// </summary>
+        public static WorkerThread Instance = new WorkerThread();
+
+        /// <summary>
         /// Will be set when the worker thread finishes a work item
         /// </summary>
         public AutoResetEvent FinishedWorkItem { get; }
@@ -40,7 +45,7 @@ namespace QuantConnect.Util
         /// Creates a new instance, which internally launches a new worker thread
         /// </summary>
         /// <remarks><see cref="Dispose"/></remarks>
-        public WorkerThread()
+        protected WorkerThread()
         {
             _threadCancellationTokenSource = new CancellationTokenSource();
             FinishedWorkItem = new AutoResetEvent(false);
@@ -52,7 +57,14 @@ namespace QuantConnect.Util
                     foreach (var action in _blockingCollection.GetConsumingEnumerable(_threadCancellationTokenSource.Token))
                     {
                         FinishedWorkItem.Reset();
-                        action();
+                        try
+                        {
+                            action();
+                        }
+                        catch (Exception exception)
+                        {
+                            Log.Error(exception, "WorkerThread(): exception thrown when running task");
+                        }
                         FinishedWorkItem.Set();
                     }
                 }
@@ -61,7 +73,11 @@ namespace QuantConnect.Util
                     // pass, when the token gets cancelled
                 }
             })
-            { IsBackground = true, Name = "Isolator Thread" };
+            {
+                IsBackground = true,
+                Name = "Isolator Thread",
+                Priority = ThreadPriority.Highest
+            };
             _workerThread.Start();
         }
 
